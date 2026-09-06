@@ -67,7 +67,7 @@
     touch-action: none; user-select: none; -webkit-user-select: none; }
   .pad button:active { background: var(--yellow); }
   .pad .up { grid-column: 2; grid-row: 1; } .pad .left { grid-column: 1; grid-row: 2; } .pad .down { grid-column: 2; grid-row: 2; } .pad .right { grid-column: 3; grid-row: 2; }
-  @media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } }
+  @media (pointer: coarse) { .hint { display: none; } }
   @media (prefers-reduced-motion: reduce) { .dim .val.bump { animation: none; } }
 
   /* ---------- Touch / small screens ---------------------------------------
@@ -76,6 +76,12 @@
      and the control pad. The side panel becomes a bottom sheet so it stops
      covering the plan while driving. */
   #sheetToggle { display: none; }
+  .pedals, .wheel, #controlsGroup { display: none; }
+  .seg { gap: 0; }
+  .seg-btn { flex: 1; background: #fff; color: var(--ink); border: 1px solid var(--hairline); border-radius: 0; }
+  .seg-btn:first-child { border-radius: 3px 0 0 3px; }
+  .seg-btn:last-child { border-radius: 0 3px 3px 0; border-left: 0; }
+  .seg-btn[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
   @media (pointer: coarse), (max-width: 760px), (max-height: 520px) {
     html, body { overscroll-behavior: none; }
     canvas { touch-action: none; }
@@ -105,15 +111,43 @@
 
     /* shown for the whole compact layout, not just coarse pointers, so a short
        or narrow window gets the on-screen controls too */
-    .pad { display: grid; grid-template-columns: repeat(3, 62px); grid-template-rows: repeat(2, 62px); gap: 8px;
+    #controlsGroup { display: block; }
+    body.mode-arrows .pad { display: grid; }
+    body.mode-wheel .pedals { display: flex; }
+    body.mode-wheel .wheel { display: block; }
+    body.sheet-open .pad, body.sheet-open .pedals, body.sheet-open .wheel { display: none; }
+
+    .pad { grid-template-columns: repeat(3, 62px); grid-template-rows: repeat(2, 62px); gap: 8px;
       right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); }
     .pad button { font-size: 22px; touch-action: none; }
-    body.sheet-open .pad { display: none; }
+
+    /* gas and brake fall under the left thumb, the wheel under the right */
+    .pedals { position: absolute; flex-direction: column; gap: 10px;
+      left: calc(12px + env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .pedals button { width: 86px; height: 72px; font: inherit; font-size: 17px; line-height: 1.1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      color: var(--ink); background: rgba(255,255,255,.85); border: 1px solid var(--hairline); border-radius: 8px;
+      touch-action: none; user-select: none; -webkit-user-select: none; }
+    .pedals button span { font-size: 11px; color: var(--ink-soft); }
+    .pedals button:active { background: var(--yellow); }
+    .pedals button:active span { color: var(--ink); }
+
+    .wheel { position: absolute; width: 154px; height: 154px; touch-action: none; cursor: grab;
+      right: calc(10px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); }
+    .wheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    .wheel .rim { fill: rgba(255,255,255,.85); stroke: var(--ink); stroke-width: 7; }
+    .wheel .spoke { stroke: var(--ink); stroke-width: 7; stroke-linecap: round; fill: none; }
+    .wheel .hub { fill: var(--ink); }
+    .wheel .mark { stroke: var(--yellow); stroke-width: 7; stroke-linecap: round; }
+    .wheel:active { cursor: grabbing; }
+    .wheel:focus-visible { outline: 2px solid var(--yellow); outline-offset: 4px; border-radius: 50%; }
   }
   @media (max-height: 520px) and (orientation: landscape) {
     .hud { gap: 12px; }
     .dim .val { font-size: 15px; }
     .pad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(2, 54px); }
+    .pedals button { width: 76px; height: 58px; font-size: 15px; }
+    .wheel { width: 124px; height: 124px; }
     /* side by side, so the sheet stays short on a screen only ~390px tall */
     .panel { flex-direction: row; align-items: flex-start; gap: 20px; max-height: 80%; }
     .panel .group { flex: 1; min-width: 0; }
@@ -139,6 +173,14 @@
     <label for="addModel">Add to street</label>
     <div class="row"><select id="addModel"></select><button id="addBtn">Add vehicle</button></div>
   </div>
+  <div class="group" id="controlsGroup">
+    <label>Controls</label>
+    <div class="row seg">
+      <button id="modeArrows" class="seg-btn" aria-pressed="true">Arrows</button>
+      <button id="modeWheel" class="seg-btn" aria-pressed="false">Steering wheel</button>
+    </div>
+    <div class="note">The wheel holds the angle you leave it at — it does not spring back to centre.</div>
+  </div>
   <div class="group" id="selGroup">
     <label for="swapModel">Selected vehicle</label>
     <div class="row"><select id="swapModel"></select><button id="removeBtn" class="quiet">Remove</button></div>
@@ -160,6 +202,21 @@
   <button class="right" data-k="ArrowRight" aria-label="steer right">→</button>
 </div>
 
+<div class="pedals">
+  <button class="gas"   data-k="ArrowUp"   aria-label="accelerate">▲<span>gas</span></button>
+  <button class="brake" data-k="ArrowDown" aria-label="brake or reverse">▼<span>brake</span></button>
+</div>
+
+<div class="wheel" id="wheel" role="slider" tabindex="0" aria-label="steering"
+     aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0" aria-valuetext="centred">
+  <svg viewBox="-50 -50 100 100" aria-hidden="true">
+    <circle class="rim" cx="0" cy="0" r="43"/>
+    <path class="spoke" d="M-31 12 H31 M0 12 V40"/>
+    <circle class="hub" cx="0" cy="0" r="11"/>
+    <path class="mark" d="M0 -43 v9"/>
+  </svg>
+</div>
+
 <script>
 (() => {
 'use strict';
@@ -168,7 +225,8 @@ const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
 const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel'), removeBtn = $('removeBtn'), selGroup = $('selGroup');
 const swatchBox = $('swatches');
-const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud'), padEl = document.querySelector('.pad');
+const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud'), padEl = document.querySelector('.pad'), pedalsEl = document.querySelector('.pedals');
+const wheelEl = $('wheel'), modeArrows = $('modeArrows'), modeWheel = $('modeWheel');
 
 // ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
 const W = 18.6, H = 15.6;
@@ -263,7 +321,7 @@ function select(v) {
 function reset() {
   vehicles.length = 0; active = null;
   state.hits = 0; state.t = 0; state.hitCooldown = 0; state.flash = 0; state.contact = false;
-  updHits(); addVehicle(models[2]);
+  updHits(); centreWheel(); addVehicle(models[2]);
 }
 
 addBtn.addEventListener('click', () => addVehicle(models.find(m => m.id === addModel.value)));
@@ -283,7 +341,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Tab' && vehicles.length) { e.preventDefault(); select(vehicles[(vehicles.indexOf(active) + 1) % vehicles.length]); }
 });
 addEventListener('keyup', e => { keys[e.key] = false; });
-document.querySelectorAll('.pad button').forEach(b => {
+document.querySelectorAll('[data-k]').forEach(b => {
   const k = b.dataset.k, on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
 });
@@ -330,8 +388,10 @@ function step(dt) {
   if (!up && !down && Math.abs(car.v) < 0.02) car.v = 0;
 
   const lock = spec.lock * (1 - 0.55 * Math.min(1, Math.abs(car.v) / VMAX));
-  const want = left ? -lock : right ? lock : 0;
-  const rate = (left || right) ? 3.2 : 4.5;
+  // Arrows spring back to centre when released; the wheel keeps whatever angle it holds.
+  const wheeling = mode === 'wheel';
+  const want = wheeling ? (wheelDeg / WHEEL_MAX) * lock : left ? -lock : right ? lock : 0;
+  const rate = wheeling ? 6.0 : (left || right) ? 3.2 : 4.5;
   car.steer += Math.max(-rate * dt, Math.min(rate * dt, want - car.steer));
 
   // kinematic bicycle at the rear axle
@@ -382,8 +442,13 @@ function fit() {
   let top = 0, bottom = 0;
   if (compact.matches && VH > VW) {
     top = hudEl.getBoundingClientRect().bottom + 10;
-    const pb = padEl.getBoundingClientRect();
-    if (pb.height) bottom = (VH - pb.top) + 10;
+    // whichever control set is on screen for the current mode
+    let ctrlTop = VH;
+    for (const el of [padEl, pedalsEl, wheelEl]) {
+      const b = el.getBoundingClientRect();
+      if (b.height) ctrlTop = Math.min(ctrlTop, b.top);
+    }
+    if (ctrlTop < VH) bottom = (VH - ctrlTop) + 10;
   }
   const availH = Math.max(140, VH - top - bottom);
   S = Math.min(VW / W, availH / H) * 0.94;
@@ -408,6 +473,61 @@ function setSheet(open) {
   fit();                       // the pad hides while the sheet is up, so the plan can grow
 }
 sheetToggle.addEventListener('click', () => setSheet(!panel.classList.contains('open')));
+
+// ---------- Control mode: arrow pad, or a steering wheel that holds its angle.
+// The wheel is an absolute input - where you leave it is where the wheels stay -
+// so unlike the arrow pad it never returns the steering to centre on release.
+const WHEEL_MAX = 150;              // degrees of wheel rotation at full steering lock
+let mode = 'arrows', wheelDeg = 0, wheelDrag = null;
+function renderWheel() {
+  wheelEl.style.transform = `rotate(${wheelDeg}deg)`;
+  const pct = Math.round(wheelDeg / WHEEL_MAX * 100);
+  wheelEl.setAttribute('aria-valuenow', pct);
+  wheelEl.setAttribute('aria-valuetext', pct === 0 ? 'centred' : `${Math.abs(pct)}% ${pct < 0 ? 'left' : 'right'}`);
+}
+function centreWheel() { wheelDeg = 0; wheelDrag = null; renderWheel(); }
+function setMode(m) {
+  mode = m;
+  document.body.classList.toggle('mode-wheel', m === 'wheel');
+  document.body.classList.toggle('mode-arrows', m === 'arrows');
+  modeArrows.setAttribute('aria-pressed', String(m === 'arrows'));
+  modeWheel.setAttribute('aria-pressed', String(m === 'wheel'));
+  centreWheel();                    // never hand the other mode a steering input it cannot see
+  keys.ArrowLeft = keys.ArrowRight = false;
+  fit();
+}
+modeArrows.addEventListener('click', () => setMode('arrows'));
+modeWheel.addEventListener('click', () => setMode('wheel'));
+
+// Drag is relative to where you grabbed the rim, so the wheel never jumps to meet your thumb.
+wheelEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = wheelEl.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  wheelDrag = { id: e.pointerId, cx, cy, a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: wheelDeg };
+  wheelEl.setPointerCapture(e.pointerId);
+});
+wheelEl.addEventListener('pointermove', e => {
+  if (!wheelDrag || e.pointerId !== wheelDrag.id) return;
+  let d = (Math.atan2(e.clientY - wheelDrag.cy, e.clientX - wheelDrag.cx) - wheelDrag.a0) * 180 / Math.PI;
+  while (d > 180) d -= 360; while (d < -180) d += 360;      // take the short way round
+  wheelDeg = Math.max(-WHEEL_MAX, Math.min(WHEEL_MAX, wheelDrag.d0 + d));
+  renderWheel();
+});
+const endWheelDrag = e => { if (wheelDrag && e.pointerId === wheelDrag.id) wheelDrag = null; };  // angle stays put
+wheelEl.addEventListener('pointerup', endWheelDrag);
+wheelEl.addEventListener('pointercancel', endWheelDrag);
+// If the capture is torn away (a system gesture, a lost pointerup) the drag must end
+// too, or the wheel keeps chasing the finger long after it has left the rim.
+wheelEl.addEventListener('lostpointercapture', endWheelDrag);
+// role="slider" has to mean something for a keyboard
+wheelEl.addEventListener('keydown', e => {
+  const step = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0;
+  if (step) { wheelDeg = Math.max(-WHEEL_MAX, Math.min(WHEEL_MAX, wheelDeg + step)); renderWheel(); }
+  else if (e.key === 'Home' || e.key === 'Escape') centreWheel();
+  else return;
+  e.preventDefault(); e.stopPropagation();
+});
+setMode('arrows');
 const px = m => m * S;
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 function rect(r, fill) { g.fillStyle = fill; g.fillRect(px(r.x), px(r.y), px(r.w), px(r.h)); }

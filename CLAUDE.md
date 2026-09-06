@@ -82,6 +82,27 @@ Desktop keeps the side panel and keyboard hints. A compact layout takes over at
 matters, because a phone held sideways is ~844×390 and a width-only breakpoint
 misses it. There, the side panel becomes a bottom sheet and the touch pad appears.
 
+### Touch controls
+
+Two modes, switched from the Controls group in the sheet (`setMode`), both mobile-only:
+
+- **Arrows** — the `.pad` d-pad. Steering springs back to centre on release.
+- **Steering wheel** — pedals bottom-left, wheel bottom-right. The wheel is an
+  *absolute* input: `wheelDeg` is where you left it, and `step()` derives the steer
+  target from it every frame, so it never returns to centre. `WHEEL_MAX` (150°) is
+  full lock.
+
+`setMode` centres the wheel and clears the arrow keys on every switch — never hand a
+mode a steering input it has no way to show or undo. `reset()` (R) centres it too.
+
+The wheel drag is *relative* to where the rim was grabbed, so it does not jump to meet
+the thumb. End the drag on `pointerup`, `pointercancel` **and `lostpointercapture`**:
+if a capture is torn away by a system gesture the wheel otherwise keeps chasing a
+finger that has long since left the screen.
+
+`fit()` reserves the band under whichever control cluster is visible for the current
+mode, so add any new cluster to the list it measures.
+
 `fit()` sizes the canvas from `documentElement.clientWidth/clientHeight` — the layout
 viewport, which is what the CSS media queries and the absolutely-positioned chrome
 are measured against. Do not switch it to `visualViewport`: that tracks pinch-zoom
