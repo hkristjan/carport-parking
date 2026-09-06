@@ -69,19 +69,72 @@
   .pad .up { grid-column: 2; grid-row: 1; } .pad .left { grid-column: 1; grid-row: 2; } .pad .down { grid-column: 2; grid-row: 2; } .pad .right { grid-column: 3; grid-row: 2; }
   @media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } }
   @media (prefers-reduced-motion: reduce) { .dim .val.bump { animation: none; } }
+
+  /* ---------- Touch / small screens ---------------------------------------
+     The plan is a landscape drawing with horizontal annotations, so it is not
+     rotated in portrait - it just scales down. fit() keeps it clear of the HUD
+     and the control pad. The side panel becomes a bottom sheet so it stops
+     covering the plan while driving. */
+  #sheetToggle { display: none; }
+  @media (pointer: coarse), (max-width: 760px), (max-height: 520px) {
+    html, body { overscroll-behavior: none; }
+    canvas { touch-action: none; }
+    .hud { left: calc(14px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top)); gap: 18px; }
+    .dim { min-width: 0; padding-bottom: 8px; }
+    .dim .val { font-size: 17px; }
+    .dim .lab { font-size: 10px; margin-top: 3px; }
+    #dimVehicle { display: none; }          /* the model name lives in the sheet on mobile */
+    .hint { display: none; }                /* keyboard hints, not useful on touch */
+
+    #sheetToggle { display: block; position: absolute; font: inherit; font-size: 14px; touch-action: manipulation;
+      right: calc(14px + env(safe-area-inset-right)); top: calc(10px + env(safe-area-inset-top));
+      background: var(--ink); color: #fff; border: 0; border-radius: 3px; padding: 9px 14px; cursor: pointer; }
+    #sheetToggle:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+    .panel { left: 0; right: 0; bottom: 0; top: auto; width: auto; gap: 14px; z-index: 2;
+      max-height: 72%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background: rgba(255,255,255,.97); border-top: 1px solid var(--hairline);
+      padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+      transform: translateY(101%); transition: transform .22s ease-out; }
+    .panel.open { transform: translateY(0); }
+    .group { border: 0; background: none; padding: 0; }
+    .group + .group { border-top: 1px solid var(--hairline); padding-top: 14px; }
+    .group select, .group button { font-size: 15px; padding: 10px 12px; touch-action: manipulation; }
+    .swatches { gap: 10px; }
+    .swatches button { width: 38px; height: 38px; }
+
+    /* shown for the whole compact layout, not just coarse pointers, so a short
+       or narrow window gets the on-screen controls too */
+    .pad { display: grid; grid-template-columns: repeat(3, 62px); grid-template-rows: repeat(2, 62px); gap: 8px;
+      right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .pad button { font-size: 22px; touch-action: none; }
+    body.sheet-open .pad { display: none; }
+  }
+  @media (max-height: 520px) and (orientation: landscape) {
+    .hud { gap: 12px; }
+    .dim .val { font-size: 15px; }
+    .pad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(2, 54px); }
+    /* side by side, so the sheet stays short on a screen only ~390px tall */
+    .panel { flex-direction: row; align-items: flex-start; gap: 20px; max-height: 80%; }
+    .panel .group { flex: 1; min-width: 0; }
+    .group + .group { border-top: 0; padding-top: 0; border-left: 1px solid var(--hairline); padding-left: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
+<button id="sheetToggle" aria-expanded="false" aria-controls="panel">Vehicles</button>
+
 <div class="hud">
   <div class="dim" id="dimHits"><div class="val" id="hits">0</div><div class="lab">collisions</div></div>
   <div class="dim"><div class="val" id="time">0,0 s</div><div class="lab">time</div></div>
   <div class="dim"><div class="val" id="speed">0 km/h</div><div class="lab">speed</div></div>
-  <div class="dim" style="min-width:200px"><div class="val" id="vehicle">—</div><div class="lab">driving</div></div>
+  <div class="dim" id="dimVehicle"><div class="val" id="vehicle">—</div><div class="lab">driving</div></div>
 </div>
 
-<div class="panel">
+<div class="panel" id="panel">
   <div class="group">
     <label for="addModel">Add to street</label>
     <div class="row"><select id="addModel"></select><button id="addBtn">Add vehicle</button></div>
@@ -115,6 +168,7 @@ const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
 const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel'), removeBtn = $('removeBtn'), selGroup = $('selGroup');
 const swatchBox = $('swatches');
+const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud'), padEl = document.querySelector('.pad');
 
 // ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
 const W = 18.6, H = 15.6;
@@ -308,18 +362,51 @@ function step(dt) {
 
 // ---------- Rendering
 const cv = $('c'), g = cv.getContext('2d');
-let S = 40, OX = 0, OY = 0;
+let S = 40, OX = 0, OY = 0, VW = 0, VH = 0;
+const compact = matchMedia('(pointer: coarse), (max-width: 760px), (max-height: 520px)');
 function fit() {
+  // Size from the layout viewport: it is what the CSS media queries and the
+  // absolutely-positioned chrome are measured against, so the canvas can never
+  // disagree with them. (visualViewport tracks pinch-zoom and the on-screen
+  // keyboard instead - useful as a change signal, wrong as a size.)
+  const de = document.documentElement;
+  VW = de.clientWidth || innerWidth; VH = de.clientHeight || innerHeight;
   const dpr = Math.min(2, devicePixelRatio || 1);
-  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
-  S = Math.min(innerWidth / W, innerHeight / H) * 0.94;
-  OX = (innerWidth - W * S) / 2; OY = (innerHeight - H * S) / 2;
+  cv.width = VW * dpr; cv.height = VH * dpr; cv.style.width = VW + 'px'; cv.style.height = VH + 'px';
+
+  // On a phone the HUD and the control pad sit over the plan, so give the plan
+  // the band between them instead of centring it in the whole viewport.
+  // In landscape the plan is height-limited and leaves wide side margins, so the
+  // HUD and pad can overlay those. In portrait they would sit on top of the plan.
+  let top = 0, bottom = 0;
+  if (compact.matches && VH > VW) {
+    top = hudEl.getBoundingClientRect().bottom + 10;
+    const pb = padEl.getBoundingClientRect();
+    if (pb.height) bottom = (VH - pb.top) + 10;
+  }
+  const availH = Math.max(140, VH - top - bottom);
+  S = Math.min(VW / W, availH / H) * 0.94;
+  OX = (VW - W * S) / 2; OY = top + (availH - H * S) / 2;
 }
-addEventListener('resize', fit); fit();
+addEventListener('resize', fit);
+addEventListener('orientationchange', () => setTimeout(fit, 150));
+if (window.visualViewport) visualViewport.addEventListener('resize', fit);
+compact.addEventListener('change', fit);
+fit();
 cv.addEventListener('pointerdown', e => {
   const x = (e.clientX - OX) / S, y = (e.clientY - OY) / S;
   for (let i = vehicles.length - 1; i >= 0; i--) if (pointInVehicle(x, y, vehicles[i])) { select(vehicles[i]); return; }
 });
+
+// ---------- The side panel becomes a bottom sheet on small screens
+function setSheet(open) {
+  panel.classList.toggle('open', open);
+  document.body.classList.toggle('sheet-open', open);
+  sheetToggle.setAttribute('aria-expanded', String(open));
+  sheetToggle.textContent = open ? 'Done' : 'Vehicles';
+  fit();                       // the pad hides while the sheet is up, so the plan can grow
+}
+sheetToggle.addEventListener('click', () => setSheet(!panel.classList.contains('open')));
 const px = m => m * S;
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 function rect(r, fill) { g.fillStyle = fill; g.fillRect(px(r.x), px(r.y), px(r.w), px(r.h)); }
@@ -375,7 +462,7 @@ function drawVehicle(c, live) {
 function draw() {
   const dpr = Math.min(2, devicePixelRatio || 1);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, innerWidth, innerHeight);
+  g.clearRect(0, 0, VW, VH);
   g.translate(OX, OY);
 
   rect({ x: 0, y: 0, w: W, h: H }, '#f8f9fa');
