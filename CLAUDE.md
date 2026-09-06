@@ -91,16 +91,28 @@ Two modes, switched from the Controls group in the sheet (`setMode`), both mobil
   does not move your hands. Steering springs back to centre on release.
 - **Steering wheel** — pedals bottom-left, wheel bottom-right. The wheel is an
   *absolute* input: `wheelDeg` is where you left it, and `step()` derives the steer
-  target from it every frame, so it never returns to centre. `WHEEL_MAX` (150°) is
-  full lock.
+  target from it every frame. `WHEEL_MAX` (150°) is full lock.
+
+  Released, it self-centres like caster does on a real car: `CASTER` degrees per
+  second per m/s of road speed, so it snaps straight at speed and **holds its angle
+  at a standstill**. Do not make this a constant rate — parked, the wheel must stay
+  where it was put.
 
 `setMode` centres the wheel and clears the arrow keys on every switch — never hand a
 mode a steering input it has no way to show or undo. `reset()` (R) centres it too.
 
-The wheel drag is *relative* to where the rim was grabbed, so it does not jump to meet
-the thumb. End the drag on `pointerup`, `pointercancel` **and `lostpointercapture`**:
-if a capture is torn away by a system gesture the wheel otherwise keeps chasing a
-finger that has long since left the screen.
+The wheel drag is *relative*, so it does not jump to meet the thumb — and it
+accumulates **per pointermove**, not from the grab point. Measuring the whole delta
+from the grab point means normalising it to (-180°, 180°], which flips sign once a
+drag passes half a turn and throws the wheel to the opposite lock. Per-move deltas
+are always small, so nothing ever wraps.
+
+End the drag on `pointerup`, `pointercancel` **and `lostpointercapture`**: if a
+capture is torn away by a system gesture the wheel otherwise keeps chasing a finger
+that has long since left the screen.
+
+`renderWheel()` is a no-op when the angle has not changed, because `loop()` calls it
+every frame while self-centring moves the wheel on its own.
 
 `fit()` reserves the band under whichever control cluster is visible for the current
 mode. It measures everything matching `.pad, .pedals, .wheel` (`ctrlEls`), so a new

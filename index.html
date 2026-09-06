@@ -389,6 +389,7 @@ function step(dt) {
   const up = keys.ArrowUp, down = keys.ArrowDown, left = keys.ArrowLeft, right = keys.ArrowRight;
 
   const ACC = 3.2, BRAKE = 7.5, REV_ACC = 2.2, VMAX = 5.5, VREV = -2.6, DRAG = 0.9;
+  const CASTER = 40;                  // wheel self-centring, degrees per second per m/s
   let a = 0;
   if (up)        a = car.v < -0.05 ? BRAKE : ACC;
   else if (down) a = car.v >  0.05 ? -BRAKE : -REV_ACC;
@@ -397,8 +398,13 @@ function step(dt) {
   if (!up && !down && Math.abs(car.v) < 0.02) car.v = 0;
 
   const lock = spec.lock * (1 - 0.55 * Math.min(1, Math.abs(car.v) / VMAX));
-  // Arrows spring back to centre when released; the wheel keeps whatever angle it holds.
+  // Arrows spring back to centre when released. The wheel is let go of instead: caster
+  // pulls it straight in proportion to road speed, and holds its angle at a standstill.
   const wheeling = mode === 'wheel';
+  if (wheeling && !wheelDrag && wheelDeg !== 0) {
+    const back = CASTER * Math.abs(car.v) * dt;
+    wheelDeg = wheelDeg > 0 ? Math.max(0, wheelDeg - back) : Math.min(0, wheelDeg + back);
+  }
   const want = wheeling ? (wheelDeg / WHEEL_MAX) * lock : left ? -lock : right ? lock : 0;
   const rate = wheeling ? 6.0 : (left || right) ? 3.2 : 4.5;
   car.steer += Math.max(-rate * dt, Math.min(rate * dt, want - car.steer));
@@ -488,7 +494,10 @@ sheetToggle.addEventListener('click', () => setSheet(!panel.classList.contains('
 // so unlike the arrow pad it never returns the steering to centre on release.
 const WHEEL_MAX = 150;              // degrees of wheel rotation at full steering lock
 let mode = 'arrows', wheelDeg = 0, wheelDrag = null;
+let wheelShown = NaN;
 function renderWheel() {
+  if (wheelDeg === wheelShown) return;
+  wheelShown = wheelDeg;
   wheelEl.style.transform = `rotate(${wheelDeg}deg)`;
   const pct = Math.round(wheelDeg / WHEEL_MAX * 100);
   wheelEl.setAttribute('aria-valuenow', pct);
@@ -509,20 +518,24 @@ modeArrows.addEventListener('click', () => setMode('arrows'));
 modeWheel.addEventListener('click', () => setMode('wheel'));
 
 // Drag is relative to where you grabbed the rim, so the wheel never jumps to meet your thumb.
+// The rotation accumulates from each move rather than from the grab point, so dragging
+// past half a turn cannot wrap the angle and throw the wheel the other way.
 wheelEl.addEventListener('pointerdown', e => {
   e.preventDefault();
   const r = wheelEl.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  wheelDrag = { id: e.pointerId, cx, cy, a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: wheelDeg };
+  wheelDrag = { id: e.pointerId, cx, cy, aPrev: Math.atan2(e.clientY - cy, e.clientX - cx) };
   wheelEl.setPointerCapture(e.pointerId);
 });
 wheelEl.addEventListener('pointermove', e => {
   if (!wheelDrag || e.pointerId !== wheelDrag.id) return;
-  let d = (Math.atan2(e.clientY - wheelDrag.cy, e.clientX - wheelDrag.cx) - wheelDrag.a0) * 180 / Math.PI;
-  while (d > 180) d -= 360; while (d < -180) d += 360;      // take the short way round
-  wheelDeg = Math.max(-WHEEL_MAX, Math.min(WHEEL_MAX, wheelDrag.d0 + d));
+  const a = Math.atan2(e.clientY - wheelDrag.cy, e.clientX - wheelDrag.cx);
+  let d = (a - wheelDrag.aPrev) * 180 / Math.PI;
+  while (d > 180) d -= 360; while (d < -180) d += 360;      // one move's worth, never near a wrap
+  wheelDrag.aPrev = a;
+  wheelDeg = Math.max(-WHEEL_MAX, Math.min(WHEEL_MAX, wheelDeg + d));
   renderWheel();
 });
-const endWheelDrag = e => { if (wheelDrag && e.pointerId === wheelDrag.id) wheelDrag = null; };  // angle stays put
+const endWheelDrag = e => { if (wheelDrag && e.pointerId === wheelDrag.id) wheelDrag = null; };  // step() takes it from here
 wheelEl.addEventListener('pointerup', endWheelDrag);
 wheelEl.addEventListener('pointercancel', endWheelDrag);
 // If the capture is torn away (a system gesture, a lost pointerup) the drag must end
@@ -654,6 +667,7 @@ function loop(now) {
   acc += Math.min(0.1, (now - last) / 1000); last = now;
   while (acc >= DT) { step(DT); acc -= DT; }
   draw();
+  if (mode === 'wheel') renderWheel();
   timeEl.textContent = fmtT(state.t);
   speedEl.textContent = (active ? Math.round(Math.abs(active.v) * 3.6) : 0) + ' km/h';
   requestAnimationFrame(loop);
