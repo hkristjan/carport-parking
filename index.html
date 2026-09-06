@@ -197,11 +197,12 @@ const carport = { x: 2.55, y: 3.57, w: 7.95, h: 6.08 };
 
 // ---------- Models (metres; length, width without mirrors, wheelbase, kerb-to-kerb turning circle)
 const models = [
-  { id: 'tt',    name: 'Audi TT (2008)',      len: 4.178, wid: 1.842, wb: 2.468, turn: 11.0, body: '#c62f2f', trim: '#a52323' },
-  { id: 'v90',   name: 'Volvo V90 (2017)',    len: 4.936, wid: 1.879, wb: 2.941, turn: 11.4, body: '#3b4a5c', trim: '#2c3947' },
-  { id: 'yaris', name: 'Toyota GR Yaris',     len: 3.995, wid: 1.805, wb: 2.560, turn: 10.6, body: '#f2b233', trim: '#e29e1f' },
-  { id: 'civic', name: 'Honda Civic (2002)',  len: 4.135, wid: 1.695, wb: 2.570, turn: 11.4, body: '#5aa1d6', trim: '#4a8ab8' },
-  { id: 'van',   name: 'Cargo van',           len: 5.00,  wid: 2.00,  wb: 3.20,  turn: 12.0, body: '#e9ebee', trim: '#c9ccd1', van: true },
+  { id: 'tt',     name: 'Audi TT (2008)',     len: 4.178, wid: 1.842, wb: 2.468, turn: 11.0, body: '#c62f2f', trim: '#a52323' },
+  { id: 'v90',    name: 'Volvo V90 (2017)',   len: 4.936, wid: 1.879, wb: 2.941, turn: 11.4, body: '#3b4a5c', trim: '#2c3947' },
+  { id: 'yaris',  name: 'Toyota GR Yaris',    len: 3.995, wid: 1.805, wb: 2.560, turn: 10.6, body: '#f2b233', trim: '#e29e1f' },
+  { id: 'civic',  name: 'Honda Civic (2002)', len: 4.135, wid: 1.695, wb: 2.570, turn: 11.4, body: '#5aa1d6', trim: '#4a8ab8' },
+  { id: 'van',    name: 'Cargo van',          len: 5.00,  wid: 2.00,  wb: 3.20,  turn: 12.0, body: '#e9ebee', trim: '#c9ccd1', van: true },
+  { id: 'camper', name: 'Camper van (7 m)',   len: 7.00,  wid: 2.30,  wb: 4.035, turn: 14.4, body: '#dfd7c4', trim: '#b9ad93', van: true },
 ];
 // Steering lock from the published turning circle. The kerb-to-kerb circle is swept by the
 // outer front tyre, so with Rout = turn/2 the rear-axle radius is sqrt(Rout^2 - wb^2) - track/2,
