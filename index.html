@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Carport — Level 1</title>
+<title>Carport — sandbox</title>
 <style>
   :root {
     --paper: #eef0f2;
@@ -41,16 +41,20 @@
   .hint { position: absolute; left: 24px; bottom: 20px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; pointer-events: none; }
   .hint kbd { font: inherit; color: var(--ink); border: 1px solid var(--hairline); border-radius: 3px; padding: 0 5px; margin: 0 1px; }
 
-  .toast { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #fff; border: 1px solid var(--hairline);
-    padding: 26px 30px 22px; min-width: 300px; text-align: left; display: none; }
-  .toast.show { display: block; }
-  .toast h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: -0.015em; }
-  .toast p { margin: 0; color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
-  .toast .row { display: flex; gap: 32px; margin: 18px 0 20px; }
-  .toast .row b { display: block; font-size: 22px; font-weight: 500; }
-  .toast .row span { font-size: 12px; color: var(--ink-soft); }
-  .toast button { font: inherit; font-size: 14px; background: var(--ink); color: #fff; border: 0; padding: 10px 16px; cursor: pointer; border-radius: 3px; }
-  .toast button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+  .banner { position: absolute; left: 50%; top: 22px; transform: translate(-50%,-8px); background: var(--ink); color: #fff; font-size: 14px;
+    padding: 9px 16px; border-radius: 3px; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; }
+  .banner.show { opacity: 1; transform: translate(-50%,0); }
+  .panel { position: absolute; right: 24px; top: 20px; width: 260px; display: flex; flex-direction: column; gap: 16px; }
+  .group { background: rgba(255,255,255,.9); border: 1px solid var(--hairline); padding: 12px 14px 12px; }
+  .group label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
+  .group .row { display: flex; gap: 8px; }
+  .group select { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--ink); background: #fff; border: 1px solid var(--hairline); border-radius: 3px; padding: 7px 8px; }
+  .group button { font: inherit; font-size: 14px; background: var(--ink); color: #fff; border: 0; padding: 7px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+  .group button.quiet { background: #fff; color: var(--ink); border: 1px solid var(--hairline); }
+  .group button:focus-visible, .group select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+  .group .note { font-size: 12px; color: var(--ink-soft); margin-top: 10px; line-height: 1.45; }
+  #selGroup[hidden] { display: none; }
+  @media (max-width: 900px) { .panel { width: 200px; } .hud { gap: 20px; } }
 
   /* touch pad, only shown on coarse pointers */
   .pad { position: absolute; right: 18px; bottom: 18px; display: none; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 56px); gap: 6px; }
@@ -69,11 +73,24 @@
   <div class="dim" id="dimHits"><div class="val" id="hits">0</div><div class="lab">collisions</div></div>
   <div class="dim"><div class="val" id="time">0,0 s</div><div class="lab">time</div></div>
   <div class="dim"><div class="val" id="speed">0 km/h</div><div class="lab">speed</div></div>
+  <div class="dim" style="min-width:200px"><div class="val" id="vehicle">—</div><div class="lab">driving</div></div>
+</div>
+
+<div class="panel">
+  <div class="group">
+    <label for="addModel">Add to street</label>
+    <div class="row"><select id="addModel"></select><button id="addBtn">Add vehicle</button></div>
+  </div>
+  <div class="group" id="selGroup">
+    <label for="swapModel">Selected vehicle</label>
+    <div class="row"><select id="swapModel"></select><button id="removeBtn" class="quiet">Remove</button></div>
+    <div class="note">Click a car on the plan to drive it. Change the model here to swap it in place.</div>
+  </div>
 </div>
 
 <div class="hint">
-  <kbd>↑</kbd> accelerate &nbsp; <kbd>↓</kbd> brake / reverse &nbsp; <kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>R</kbd> restart<br>
-  Park in the empty bay on the right of the carport, straight and fully inside the outline.
+  <kbd>↑</kbd> accelerate &nbsp; <kbd>↓</kbd> brake / reverse &nbsp; <kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>Tab</kbd> next vehicle &nbsp; <kbd>R</kbd> reset<br>
+  Click any vehicle to take control of it. Other vehicles stay where they are and count as obstacles.
 </div>
 
 <div class="pad">
@@ -83,98 +100,135 @@
   <button class="right" data-k="ArrowRight" aria-label="steer right">→</button>
 </div>
 
-<div class="toast" id="toast" role="dialog" aria-live="polite">
-  <h1 id="tTitle">Parked</h1>
-  <p id="tBody">Level 1 complete.</p>
-  <div class="row">
-    <div><b id="tTime">0,0 s</b><span>time</span></div>
-    <div><b id="tHits">0</b><span>collisions</span></div>
-    <div><b id="tStars">★★★</b><span>rating</span></div>
-  </div>
-  <button id="again">Drive again</button>
-</div>
-
 <script>
 (() => {
 'use strict';
+// ---------- DOM
+const $ = id => document.getElementById(id);
+const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
+const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel'), removeBtn = $('removeBtn'), selGroup = $('selGroup');
+
 // ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
 const W = 18.6, H = 15.6;
-
-// Static obstacles as axis-aligned rectangles {x,y,w,h,kind}
-const obstacles = [
+const staticObstacles = [
   { x: 2.25, y: 0.00, w: 0.22, h: 11.35, kind: 'wall' },      // boundary wall on the left
   { x: 8.13, y: 0.00, w: 10.47, h: 1.76, kind: 'deck' },      // wooden deck, 12,73 m
   { x: 2.55, y: 3.57, w: 7.95, h: 0.42, kind: 'frame' },      // carport back beam
   { x: 2.55, y: 3.99, w: 0.10, h: 5.65, kind: 'frame' },      // left side of the carport
   { x: 10.40, y: 3.99, w: 0.10, h: 2.20, kind: 'post' },      // right side posts
   { x: 10.40, y: 7.45, w: 0.10, h: 2.20, kind: 'post' },
+  { x: 10.50, y: 3.57, w: 2.90, h: 0.30, kind: 'curb' },      // kerb behind the outdoor bays
   { x: 2.50, y: 11.23, w: 2.00, h: 0.12, kind: 'curb' },      // kerb, 2,00 m
   { x: 10.90, y: 11.45, w: 7.70, h: 0.14, kind: 'fence' },    // low fence along the street
-  // parked cars: bay 1 and bay 2
-  { x: 4.07 - 0.875, y: 6.23 - 2.2, w: 1.75, h: 4.40, kind: 'car', body: '#5a5f65', roof: '#3a3e43' },
-  { x: 6.73 - 0.80,  y: 5.80 - 1.8, w: 1.60, h: 3.60, kind: 'car', body: '#e8e9eb', roof: '#b7bbc0' },
+  { x: 0.00, y: 15.30, w: W,    h: 0.16, kind: 'fence' },     // south boundary fence
 ];
-// invisible world bounds
 const bounds = [
   { x: -1, y: -1, w: W + 2, h: 1 }, { x: -1, y: H, w: W + 2, h: 1 },
   { x: -1, y: -1, w: 1, h: H + 2 }, { x: W, y: -1, w: 1, h: H + 2 },
 ];
-const target = { x: 8.30, y: 4.10, w: 2.10, h: 5.00 };          // bay 3
+const bays = [
+  { x: 2.70, y: 4.05, w: 2.55, h: 5.55 }, { x: 5.25, y: 4.05, w: 2.55, h: 5.55 }, { x: 7.80, y: 4.05, w: 2.55, h: 5.55 },
+  { x: 10.65, y: 4.05, w: 2.60, h: 5.55 }, { x: 13.25, y: 4.05, w: 2.60, h: 5.55 },
+];
 const palms = [[13.1, 1.4], [16.7, 1.4]];
 const apron = { x: 2.55, y: 9.65, w: 7.95, h: 1.58 };
 const path  = { x: 8.13, y: 1.76, w: 2.40, h: 1.81 };
 const carport = { x: 2.55, y: 3.57, w: 7.95, h: 6.08 };
+const pavedRight = { x: 10.50, y: 3.87, w: 5.45, h: 7.36 };
 
-// ---------- Player car (bicycle model)
-const CAR = { len: 3.8, wid: 1.9, wheelbase: 2.5 };
-const car = {};
-const start = { x: 11.23, y: 14.05, a: Math.PI };  // facing left, as in the plan
-function reset() {
-  Object.assign(car, { x: start.x, y: start.y, a: start.a, v: 0, steer: 0 });
-  state.hits = 0; state.t = 0; state.done = false; state.parkHold = 0; state.hitCooldown = 0; state.contact = false; state.flash = 0;
-  toast.classList.remove('show'); updHits();
+// ---------- Models (metres; length, width without mirrors, wheelbase)
+const models = [
+  { id: 'tt',    name: 'Audi TT (2008)',      len: 4.178, wid: 1.842, wb: 2.468, body: '#c62f2f', trim: '#a52323' },
+  { id: 'v90',   name: 'Volvo V90 (2017)',    len: 4.936, wid: 1.879, wb: 2.941, body: '#3b4a5c', trim: '#2c3947' },
+  { id: 'yaris', name: 'Toyota GR Yaris',     len: 3.995, wid: 1.805, wb: 2.560, body: '#f2b233', trim: '#e29e1f' },
+  { id: 'civic', name: 'Honda Civic (2002)',  len: 4.135, wid: 1.695, wb: 2.570, body: '#5aa1d6', trim: '#4a8ab8' },
+  { id: 'van',   name: 'Cargo van',           len: 5.00,  wid: 2.00,  wb: 3.20,  body: '#e9ebee', trim: '#c9ccd1', van: true },
+];
+for (const sel of [addModel, swapModel]) for (const m of models) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); }
+
+// ---------- Vehicles on the plan
+const vehicles = [];   // { x, y, a, v, steer, spec }
+let active = null;
+const state = { hits: 0, t: 0, hitCooldown: 0, contact: false, flash: 0 };
+
+// spawn at the east end of the street, facing west; slide west if that spot is taken
+function addVehicle(spec) {
+  const v = { x: 16.4, y: 14.05, a: Math.PI, v: 0, steer: 0, spec };
+  for (let tries = 0; tries < 12; tries++) {
+    const c = cornersOf(v, spec);
+    const blocked = vehicles.some(o => collide(c, v.a, cornersOf(o, o.spec), o.a)) || staticObstacles.some(r => collide(c, v.a, rectCorners(r), 0));
+    if (!blocked) break;
+    v.x -= 0.9;
+  }
+  vehicles.push(v); select(v);
 }
-const state = { hits: 0, t: 0, done: false, parkHold: 0, hitCooldown: 0, contact: false, flash: 0, running: true };
+function select(v) {
+  active = v;
+  vehicleEl.textContent = v ? v.spec.name : '—';
+  selGroup.hidden = !v;
+  if (v) swapModel.value = v.spec.id;
+}
+function reset() {
+  vehicles.length = 0; active = null;
+  state.hits = 0; state.t = 0; state.hitCooldown = 0; state.flash = 0; state.contact = false;
+  updHits(); addVehicle(models[2]);
+}
+
+addBtn.addEventListener('click', () => addVehicle(models.find(m => m.id === addModel.value)));
+swapModel.addEventListener('change', () => { if (active) { active.spec = models.find(m => m.id === swapModel.value); active.v = 0; vehicleEl.textContent = active.spec.name; } });
+removeBtn.addEventListener('click', () => {
+  if (!active) return;
+  vehicles.splice(vehicles.indexOf(active), 1);
+  select(vehicles[vehicles.length - 1] || null);
+});
 
 const keys = {};
-addEventListener('keydown', e => { if (e.key.startsWith('Arrow')) e.preventDefault(); keys[e.key] = true; if (e.key === 'r' || e.key === 'R') reset(); });
-addEventListener('keyup',   e => { keys[e.key] = false; });
+addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') && !e.key.startsWith('Arrow')) return;
+  if (e.key.startsWith('Arrow')) e.preventDefault();
+  keys[e.key] = true;
+  if (e.key === 'r' || e.key === 'R') reset();
+  if (e.key === 'Tab' && vehicles.length) { e.preventDefault(); select(vehicles[(vehicles.indexOf(active) + 1) % vehicles.length]); }
+});
+addEventListener('keyup', e => { keys[e.key] = false; });
 document.querySelectorAll('.pad button').forEach(b => {
   const k = b.dataset.k, on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
 });
 
-// ---------- Geometry helpers
-function carCorners(c) {
-  const ca = Math.cos(c.a), sa = Math.sin(c.a), hl = CAR.len / 2, hw = CAR.wid / 2;
+// ---------- Geometry
+function cornersOf(c, spec) {
+  const ca = Math.cos(c.a), sa = Math.sin(c.a), hl = spec.len / 2, hw = spec.wid / 2;
   return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([px, py]) => [c.x + px * ca - py * sa, c.y + px * sa + py * ca]);
 }
-// SAT between car OBB and an AABB; returns minimum translation vector to move the car out, or null
-function collide(corners, r) {
-  const rc = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
-  const axes = [[1, 0], [0, 1], [Math.cos(car.a), Math.sin(car.a)], [-Math.sin(car.a), Math.cos(car.a)]];
+const rectCorners = r => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+// SAT between two oriented boxes; returns minimum translation vector for A, or null
+function collide(A, aA, B, aB) {
+  const axes = [[Math.cos(aA), Math.sin(aA)], [-Math.sin(aA), Math.cos(aA)], [Math.cos(aB), Math.sin(aB)], [-Math.sin(aB), Math.cos(aB)]];
   let best = null;
   for (const [ax, ay] of axes) {
     let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-    for (const [x, y] of corners) { const p = x * ax + y * ay; a0 = Math.min(a0, p); a1 = Math.max(a1, p); }
-    for (const [x, y] of rc)      { const p = x * ax + y * ay; b0 = Math.min(b0, p); b1 = Math.max(b1, p); }
+    for (const [x, y] of A) { const p = x * ax + y * ay; a0 = Math.min(a0, p); a1 = Math.max(a1, p); }
+    for (const [x, y] of B) { const p = x * ax + y * ay; b0 = Math.min(b0, p); b1 = Math.max(b1, p); }
     const overlap = Math.min(a1, b1) - Math.max(a0, b0);
     if (overlap <= 0) return null;
-    if (!best || overlap < best.d) {
-      const carMid = (a0 + a1) / 2, boxMid = (b0 + b1) / 2, s = carMid < boxMid ? -1 : 1;
-      best = { d: overlap, nx: ax * s, ny: ay * s };
-    }
+    if (!best || overlap < best.d) { const s = (a0 + a1) / 2 < (b0 + b1) / 2 ? -1 : 1; best = { d: overlap, nx: ax * s, ny: ay * s }; }
   }
   return best;
 }
+function pointInVehicle(x, y, v) {
+  const dx = x - v.x, dy = y - v.y, ca = Math.cos(v.a), sa = Math.sin(v.a);
+  const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
+  return Math.abs(lx) <= v.spec.len / 2 + 0.15 && Math.abs(ly) <= v.spec.wid / 2 + 0.15;
+}
 
-// ---------- Simulation
+// ---------- Simulation (only the selected vehicle moves)
 function step(dt) {
-  if (state.done) return;
   state.t += dt;
+  const car = active; if (!car) return;
+  const spec = car.spec;
   const up = keys.ArrowUp, down = keys.ArrowDown, left = keys.ArrowLeft, right = keys.ArrowRight;
 
-  // longitudinal: engine, brakes, reverse, rolling resistance
   const ACC = 3.2, BRAKE = 7.5, REV_ACC = 2.2, VMAX = 5.5, VREV = -2.6, DRAG = 0.9;
   let a = 0;
   if (up)        a = car.v < -0.05 ? BRAKE : ACC;
@@ -183,67 +237,56 @@ function step(dt) {
   car.v = Math.max(VREV, Math.min(VMAX, car.v + a * dt));
   if (!up && !down && Math.abs(car.v) < 0.02) car.v = 0;
 
-  // steering: max lock shrinks with speed, wheel self-centres
-  const lock = 0.62 * (1 - 0.55 * Math.min(1, Math.abs(car.v) / VMAX));
+  const lock = (0.62 - 0.03 * (spec.wb - 2.45)) * (1 - 0.55 * Math.min(1, Math.abs(car.v) / VMAX));
   const want = left ? -lock : right ? lock : 0;
   const rate = (left || right) ? 3.2 : 4.5;
   car.steer += Math.max(-rate * dt, Math.min(rate * dt, want - car.steer));
 
-  // kinematic bicycle
-  car.x += car.v * Math.cos(car.a) * dt;
-  car.y += car.v * Math.sin(car.a) * dt;
-  car.a += (car.v / CAR.wheelbase) * Math.tan(car.steer) * dt;
+  // kinematic bicycle at the rear axle
+  const R = spec.wb / 2;
+  let rx = car.x - R * Math.cos(car.a), ry = car.y - R * Math.sin(car.a);
+  rx += car.v * Math.cos(car.a) * dt; ry += car.v * Math.sin(car.a) * dt;
+  car.a += (car.v / spec.wb) * Math.tan(car.steer) * dt;
+  car.x = rx + R * Math.cos(car.a); car.y = ry + R * Math.sin(car.a);
 
-  // collisions
+  // collisions with static geometry and every other vehicle
   let hitNow = false;
   for (let i = 0; i < 3; i++) {
-    const corners = carCorners(car);
-    let any = false;
-    for (const r of [...obstacles, ...bounds]) {
-      const m = collide(corners, r);
-      if (!m) continue;
+    const A = cornersOf(car, spec); let any = false;
+    const targets = [...[...staticObstacles, ...bounds].map(r => [rectCorners(r), 0]), ...vehicles.filter(o => o !== car).map(o => [cornersOf(o, o.spec), o.a])];
+    for (const [B, aB] of targets) {
+      const m = collide(A, car.a, B, aB); if (!m) continue;
       any = hitNow = true;
       car.x += m.nx * (m.d + 0.002); car.y += m.ny * (m.d + 0.002);
       const vx = car.v * Math.cos(car.a), vy = car.v * Math.sin(car.a);
-      if (vx * m.nx + vy * m.ny < 0) car.v *= -0.25;   // soft bounce
+      if (vx * m.nx + vy * m.ny < 0) car.v *= -0.25;
     }
     if (!any) break;
   }
   state.hitCooldown = Math.max(0, state.hitCooldown - dt);
-  if (hitNow && !state.contact && state.hitCooldown === 0) {
-    state.hits++; state.hitCooldown = 0.4; state.flash = 0.25; updHits(true);
-  }
+  if (hitNow && !state.contact && state.hitCooldown === 0) { state.hits++; state.hitCooldown = 0.4; state.flash = 0.25; updHits(true); }
   state.contact = hitNow;
   state.flash = Math.max(0, state.flash - dt);
-
-  // parking check: all corners inside the bay, nearly stopped, nearly straight
-  const inside = carCorners(car).every(([x, y]) => x >= target.x && x <= target.x + target.w && y >= target.y && y <= target.y + target.h);
-  const straight = Math.abs(Math.sin(car.a)) > Math.cos(12 * Math.PI / 180);
-  if (inside && straight && Math.abs(car.v) < 0.05) { state.parkHold += dt; if (state.parkHold > 1.0) finish(); }
-  else state.parkHold = 0;
-}
-
-function finish() {
-  state.done = true; car.v = 0;
-  const stars = state.hits === 0 ? '★★★' : state.hits <= 2 ? '★★☆' : '★☆☆';
-  tTime.textContent = fmtT(state.t); tHits.textContent = state.hits; tStars.textContent = stars;
-  tBody.textContent = state.hits === 0 ? 'Level 1 complete — not a scratch.' : `Level 1 complete. ${state.hits === 1 ? 'One bump' : state.hits + ' bumps'} along the way.`;
-  toast.classList.add('show'); again.focus();
 }
 
 // ---------- Rendering
-const cv = document.getElementById('c'), g = cv.getContext('2d');
+const cv = $('c'), g = cv.getContext('2d');
 let S = 40, OX = 0, OY = 0;
 function fit() {
   const dpr = Math.min(2, devicePixelRatio || 1);
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   S = Math.min(innerWidth / W, innerHeight / H) * 0.94;
   OX = (innerWidth - W * S) / 2; OY = (innerHeight - H * S) / 2;
 }
 addEventListener('resize', fit); fit();
+cv.addEventListener('pointerdown', e => {
+  const x = (e.clientX - OX) / S, y = (e.clientY - OY) / S;
+  for (let i = vehicles.length - 1; i >= 0; i--) if (pointInVehicle(x, y, vehicles[i])) { select(vehicles[i]); return; }
+});
 const px = m => m * S;
+const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 function rect(r, fill) { g.fillStyle = fill; g.fillRect(px(r.x), px(r.y), px(r.w), px(r.h)); }
+function roundRect(x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
 
 function drawDim(x1, y1, x2, y2, label) {
   g.strokeStyle = 'rgba(46,53,56,.5)'; g.lineWidth = 1;
@@ -254,127 +297,111 @@ function drawDim(x1, y1, x2, y2, label) {
     if (horiz) { g.moveTo(px(x), px(y - t)); g.lineTo(px(x), px(y + t)); } else { g.moveTo(px(x - t), px(y)); g.lineTo(px(x + t), px(y)); }
     g.stroke();
   }
-  g.fillStyle = '#4b5257'; g.font = `${Math.max(10, S * 0.28)}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  g.fillStyle = '#4b5257'; g.font = `${Math.max(10, S * 0.28)}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
   if (horiz) g.fillText(label, px((x1 + x2) / 2), px(y1) - 3);
   else { g.save(); g.translate(px(x1) - 4, px((y1 + y2) / 2)); g.rotate(-Math.PI / 2); g.fillText(label, 0, 0); g.restore(); }
 }
 
-function drawParkedCar(r) {
-  const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = px(0.32);
-  g.fillStyle = r.body; roundRect(px(r.x), px(r.y), px(r.w), px(r.h), rad); g.fill();
-  g.fillStyle = r.roof; roundRect(px(r.x + 0.16), px(r.y + r.h * 0.28), px(r.w - 0.32), px(r.h * 0.42), px(0.14)); g.fill();
-  g.fillStyle = 'rgba(20,24,28,.55)';
-  roundRect(px(r.x + 0.2), px(r.y + r.h * 0.18), px(r.w - 0.4), px(r.h * 0.12), px(0.08)); g.fill();
-  roundRect(px(r.x + 0.2), px(r.y + r.h * 0.72), px(r.w - 0.4), px(r.h * 0.10), px(0.08)); g.fill();
-}
-function roundRect(x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
-
-function drawPlayer() {
-  g.save(); g.translate(px(car.x), px(car.y)); g.rotate(car.a);
-  const L = px(CAR.len), Wd = px(CAR.wid);
-  if (state.flash > 0) { g.shadowColor = 'rgba(214,69,61,.9)'; g.shadowBlur = px(0.5) * (state.flash / 0.25); }
-  g.fillStyle = '#f2b233'; roundRect(-L / 2, -Wd / 2, L, Wd, px(0.45)); g.fill();
+function drawVehicle(c, live) {
+  const spec = c.spec;
+  g.save(); g.translate(px(c.x), px(c.y)); g.rotate(c.a);
+  const L = px(spec.len), Wd = px(spec.wid);
+  if (live && state.flash > 0) { g.shadowColor = 'rgba(214,69,61,.9)'; g.shadowBlur = px(0.5) * (state.flash / 0.25); }
+  g.fillStyle = spec.body; roundRect(-L / 2, -Wd / 2, L, Wd, px(spec.van ? 0.25 : 0.45)); g.fill();
   g.shadowBlur = 0;
-  g.fillStyle = '#e29e1f'; roundRect(-L / 2 + px(0.25), -Wd / 2 + px(0.15), L - px(0.5), Wd - px(0.3), px(0.35)); g.fill();
-  g.fillStyle = '#2a3238';
-  roundRect(px(0.35), -Wd / 2 + px(0.22), px(0.55), Wd - px(0.44), px(0.12)); g.fill();       // windscreen (front = +x)
-  roundRect(-px(1.25), -Wd / 2 + px(0.22), px(0.45), Wd - px(0.44), px(0.12)); g.fill();       // rear window
-  g.fillStyle = '#3c454c'; roundRect(-px(0.75), -Wd / 2 + px(0.18), px(1.05), Wd - px(0.36), px(0.16)); g.fill(); // roof
-  g.fillStyle = '#f2b233'; roundRect(-px(0.55), -Wd / 2 + px(0.3), px(0.7), Wd - px(0.6), px(0.1)); g.fill();
+  g.fillStyle = spec.trim; roundRect(-L / 2 + px(0.25), -Wd / 2 + px(0.15), L - px(0.5), Wd - px(0.3), px(0.35)); g.fill();
+  const glass = '#2a3238', roof = '#3c454c';
+  if (spec.van) {
+    g.fillStyle = glass; roundRect(L * 0.28, -Wd / 2 + px(0.2), px(0.5), Wd - px(0.4), px(0.1)); g.fill();
+    g.fillStyle = roof;  roundRect(-L / 2 + px(0.3), -Wd / 2 + px(0.18), L * 0.76, Wd - px(0.36), px(0.16)); g.fill();
+  } else {
+    const fw = L * 0.12, rw = L * 0.10, cabin = L * 0.42;
+    g.fillStyle = glass;
+    roundRect(L * 0.10, -Wd / 2 + px(0.22), fw, Wd - px(0.44), px(0.12)); g.fill();
+    roundRect(-L * 0.35, -Wd / 2 + px(0.22), rw, Wd - px(0.44), px(0.12)); g.fill();
+    g.fillStyle = roof; roundRect(-L * 0.25, -Wd / 2 + px(0.18), cabin * 0.85, Wd - px(0.36), px(0.16)); g.fill();
+    g.fillStyle = spec.body; roundRect(-L * 0.2, -Wd / 2 + px(0.3), cabin * 0.6, Wd - px(0.6), px(0.1)); g.fill();
+  }
   g.fillStyle = '#fff4c8'; g.fillRect(L / 2 - px(0.12), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(L / 2 - px(0.12), Wd / 2 - px(0.55), px(0.1), px(0.4));
   g.fillStyle = '#c2352d'; g.fillRect(-L / 2 + px(0.02), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(-L / 2 + px(0.02), Wd / 2 - px(0.55), px(0.1), px(0.4));
-  // steered front wheels
   g.fillStyle = '#1b1f22';
   for (const side of [-1, 1]) {
-    g.save(); g.translate(px(1.1), side * (Wd / 2 - px(0.08))); g.rotate(car.steer); g.fillRect(-px(0.3), -px(0.09), px(0.6), px(0.18)); g.restore();
-    g.fillRect(-px(1.4), side * (Wd / 2 - px(0.08)) - px(0.09), px(0.6), px(0.18));
+    g.save(); g.translate(px(spec.wb / 2), side * (Wd / 2 - px(0.08))); g.rotate(c.steer); g.fillRect(-px(0.3), -px(0.09), px(0.6), px(0.18)); g.restore();
+    g.fillRect(-px(spec.wb / 2) - px(0.3), side * (Wd / 2 - px(0.08)) - px(0.09), px(0.6), px(0.18));
   }
-  g.fillStyle = '#c7912a'; g.fillRect(px(0.15), -Wd / 2 - px(0.12), px(0.35), px(0.12)); g.fillRect(px(0.15), Wd / 2, px(0.35), px(0.12)); // mirrors
+  g.fillStyle = spec.trim; g.fillRect(L * 0.04, -Wd / 2 - px(0.12), px(0.35), px(0.12)); g.fillRect(L * 0.04, Wd / 2, px(0.35), px(0.12));
+  if (live) { g.strokeStyle = 'rgba(46,53,56,.9)'; g.lineWidth = Math.max(1.5, px(0.05)); g.setLineDash([px(0.2), px(0.12)]); roundRect(-L / 2 - px(0.18), -Wd / 2 - px(0.18), L + px(0.36), Wd + px(0.36), px(0.5)); g.stroke(); }
   g.restore();
 }
 
 function draw() {
-  g.setTransform(Math.min(2, devicePixelRatio || 1), 0, 0, Math.min(2, devicePixelRatio || 1), 0, 0);
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, innerWidth, innerHeight);
   g.translate(OX, OY);
 
-  // ground / street
   rect({ x: 0, y: 0, w: W, h: H }, '#f8f9fa');
-  rect({ x: 0, y: 11.6, w: W, h: H - 11.6 }, '#f1f2f4');
+  rect({ x: 0, y: 11.6, w: W, h: H - 11.6 }, '#e9ebee');                 // street
+  g.strokeStyle = 'rgba(46,53,56,.35)'; g.lineWidth = 1;
+  for (let x = 0.5; x < W; x += 1.2) { g.beginPath(); g.moveTo(px(x), px(13.45)); g.lineTo(px(x + 0.6), px(13.45)); g.stroke(); } // centre line
 
-  // deck planks
-  rect(obstacles[1], '#aeb3b8');
-  g.strokeStyle = 'rgba(60,66,70,.35)'; g.lineWidth = 1;
-  for (let y = obstacles[1].y + 0.16; y < obstacles[1].y + obstacles[1].h; y += 0.16) { g.beginPath(); g.moveTo(px(obstacles[1].x), px(y)); g.lineTo(px(obstacles[1].x + obstacles[1].w), px(y)); g.stroke(); }
+  const deck = staticObstacles[1];
+  rect(deck, '#aeb3b8');
+  g.strokeStyle = 'rgba(60,66,70,.35)';
+  for (let y = deck.y + 0.16; y < deck.y + deck.h; y += 0.16) { g.beginPath(); g.moveTo(px(deck.x), px(y)); g.lineTo(px(deck.x + deck.w), px(y)); g.stroke(); }
 
-  rect(path, '#bfc4ca');       // walkway to the deck
-  rect(apron, '#c9cdd3');      // concrete apron
-  rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb'); // carport floor
+  rect(pavedRight, '#dfe2e6'); rect(path, '#bfc4ca'); rect(apron, '#c9cdd3');
+  rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb');
 
-  // target bay
-  g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = state.parkHold > 0 ? '#2e8a4c' : '#3f8f5a'; g.lineWidth = Math.max(1.5, px(0.05));
-  g.fillStyle = state.parkHold > 0 ? 'rgba(63,143,90,.32)' : 'rgba(63,143,90,.13)';
-  g.fillRect(px(target.x), px(target.y), px(target.w), px(target.h)); g.strokeRect(px(target.x), px(target.y), px(target.w), px(target.h)); g.restore();
-  g.fillStyle = 'rgba(63,143,90,.75)'; g.font = `500 ${S * 0.9}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('P', px(target.x + target.w / 2), px(target.y + target.h / 2));
+  g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
+  for (const b of bays) g.strokeRect(px(b.x), px(b.y), px(b.w), px(b.h));
+  g.restore();
 
-  // static obstacles
-  for (const o of obstacles) {
+  for (const o of staticObstacles) {
     if (o.kind === 'deck') continue;
-    if (o.kind === 'car') { drawParkedCar(o); continue; }
     rect(o, o.kind === 'wall' ? '#a3a8ae' : o.kind === 'curb' ? '#8f949a' : o.kind === 'fence' ? '#3a4144' : '#2c3335');
   }
-  // wall edge shading
+  // fence posts on the south boundary
+  g.fillStyle = '#2c3335';
+  for (let x = 0.4; x < W; x += 2.0) g.fillRect(px(x) - px(0.08), px(15.22), px(0.16), px(0.32));
   rect({ x: 2.25, y: 0, w: 0.06, h: 11.35 }, '#8a8f95');
 
-  drawPlayer();
+  for (const v of vehicles) if (v !== active) drawVehicle(v, false);
+  if (active) drawVehicle(active, true);
 
-  // carport roof slats, drawn over everything beneath the roof
   g.save(); g.beginPath(); g.rect(px(carport.x), px(carport.y + 0.42), px(carport.w), px(carport.h - 0.9)); g.clip();
   g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, px(0.045));
   for (let x = carport.x + 0.1; x < carport.x + carport.w; x += 0.1) { g.beginPath(); g.moveTo(px(x), px(carport.y)); g.lineTo(px(x), px(carport.y + carport.h)); g.stroke(); }
   g.restore();
-  rect({ x: carport.x, y: carport.y + carport.h - 0.48, w: carport.w, h: 0.48 }, 'rgba(44,51,53,.92)'); // front roof beam (open below)
+  rect({ x: carport.x, y: carport.y + carport.h - 0.48, w: carport.w, h: 0.48 }, 'rgba(44,51,53,.92)');
 
-  // palms on the deck
   for (const [x, y] of palms) {
     g.strokeStyle = '#4f8a3a'; g.lineWidth = Math.max(1.5, px(0.07)); g.lineCap = 'round';
     for (let i = 0; i < 9; i++) { const a = i * Math.PI * 2 / 9 + 0.3; g.beginPath(); g.moveTo(px(x), px(y)); g.quadraticCurveTo(px(x + Math.cos(a) * 0.5), px(y + Math.sin(a) * 0.5 - 0.1), px(x + Math.cos(a) * 1.05), px(y + Math.sin(a) * 1.05)); g.stroke(); }
     g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(px(x), px(y), px(0.16), 0, Math.PI * 2); g.fill();
   }
 
-  // dimension annotations, as on the plan
   drawDim(2.55, 2.1, 10.50, 2.1, '7,98 m');
   drawDim(8.13, 2.9, 10.53, 2.9, '2,40 m');
   drawDim(2.60, 11.95, 4.60, 11.95, '2,00 m');
   drawDim(4.60, 11.95, 10.60, 11.95, '6,00 m');
-  drawDim(11.9, 3.57, 11.9, 11.15, '7,58 m');
+  drawDim(16.4, 3.57, 16.4, 11.15, '7,58 m');
   drawDim(8.13, 1.35, 18.6, 1.35, '12,73 m');
-
-  if (state.parkHold > 0 && !state.done) {
-    g.fillStyle = 'rgba(46,53,56,.9)'; g.font = `${Math.max(11, S * 0.3)}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'top';
-    g.fillText('hold still…', px(target.x + target.w / 2), px(target.y + target.h) + 6);
-  }
 }
 
-// ---------- HUD
-const hitsEl = document.getElementById('hits'), timeEl = document.getElementById('time'), speedEl = document.getElementById('speed'), dimHits = document.getElementById('dimHits');
-const toast = document.getElementById('toast'), tTime = document.getElementById('tTime'), tHits = document.getElementById('tHits'), tStars = document.getElementById('tStars'), tBody = document.getElementById('tBody'), again = document.getElementById('again');
+// ---------- HUD + loop
 const fmtT = t => t.toFixed(1).replace('.', ',') + ' s';
-again.addEventListener('click', reset);
 function updHits(bump) {
   hitsEl.textContent = state.hits; dimHits.classList.toggle('bad', state.hits > 0);
   if (bump) { hitsEl.classList.remove('bump'); void hitsEl.offsetWidth; hitsEl.classList.add('bump'); }
 }
-
-// ---------- Loop with fixed timestep
 let last = performance.now(), acc = 0; const DT = 1 / 120;
 function loop(now) {
   acc += Math.min(0.1, (now - last) / 1000); last = now;
   while (acc >= DT) { step(DT); acc -= DT; }
   draw();
   timeEl.textContent = fmtT(state.t);
-  speedEl.textContent = Math.round(Math.abs(car.v) * 3.6) + ' km/h';
+  speedEl.textContent = (active ? Math.round(Math.abs(active.v) * 3.6) : 0) + ' km/h';
   requestAnimationFrame(loop);
 }
 reset();
