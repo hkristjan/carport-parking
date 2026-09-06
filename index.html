@@ -117,7 +117,6 @@ const staticObstacles = [
   { x: 2.55, y: 3.99, w: 0.10, h: 5.65, kind: 'frame' },      // left side of the carport
   { x: 10.40, y: 3.99, w: 0.10, h: 2.20, kind: 'post' },      // right side posts
   { x: 10.40, y: 7.45, w: 0.10, h: 2.20, kind: 'post' },
-  { x: 10.50, y: 3.57, w: 2.90, h: 0.30, kind: 'curb' },      // kerb along the paved area on the right
   { x: 2.50, y: 11.23, w: 2.00, h: 0.12, kind: 'curb' },      // kerb, 2,00 m
   { x: 10.90, y: 11.45, w: 7.70, h: 0.14, kind: 'fence' },    // low fence along the street
   { x: 0.00, y: 15.30, w: W,    h: 0.16, kind: 'fence' },     // south boundary fence
@@ -133,7 +132,6 @@ const palms = [[13.1, 1.4], [16.7, 1.4]];
 const apron = { x: 2.55, y: 9.65, w: 7.95, h: 1.58 };
 const path  = { x: 8.13, y: 1.76, w: 2.40, h: 1.81 };
 const carport = { x: 2.55, y: 3.57, w: 7.95, h: 6.08 };
-const pavedRight = { x: 10.50, y: 3.87, w: 5.45, h: 7.36 };
 
 // ---------- Models (metres; length, width without mirrors, wheelbase)
 const models = [
@@ -349,7 +347,7 @@ function draw() {
   g.strokeStyle = 'rgba(60,66,70,.35)';
   for (let y = deck.y + 0.16; y < deck.y + deck.h; y += 0.16) { g.beginPath(); g.moveTo(px(deck.x), px(y)); g.lineTo(px(deck.x + deck.w), px(y)); g.stroke(); }
 
-  rect(pavedRight, '#dfe2e6'); rect(path, '#bfc4ca'); rect(apron, '#c9cdd3');
+  rect(path, '#bfc4ca'); rect(apron, '#c9cdd3');
   rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb');
 
   g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
@@ -384,7 +382,6 @@ function draw() {
   drawDim(8.13, 2.9, 10.53, 2.9, '2,40 m');
   drawDim(2.60, 11.95, 4.60, 11.95, '2,00 m');
   drawDim(4.60, 11.95, 10.60, 11.95, '6,00 m');
-  drawDim(16.4, 3.57, 16.4, 11.15, '7,58 m');
   drawDim(8.13, 1.35, 18.6, 1.35, '12,73 m');
 }
 
