@@ -62,11 +62,13 @@
   @media (max-width: 900px) { .panel { width: 200px; } .hud { gap: 20px; } }
 
   /* touch pad, only shown on coarse pointers */
-  .pad { position: absolute; right: 18px; bottom: 18px; display: none; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 56px); gap: 6px; }
+  .pad { position: absolute; bottom: 18px; display: none; gap: 6px; }
+  .pad-drive { left: 18px; flex-direction: column; }
+  .pad-steer { right: 18px; flex-direction: row; }
   .pad button { font: inherit; font-size: 20px; color: var(--ink); background: rgba(255,255,255,.85); border: 1px solid var(--hairline); border-radius: 6px;
     touch-action: none; user-select: none; -webkit-user-select: none; }
   .pad button:active { background: var(--yellow); }
-  .pad .up { grid-column: 2; grid-row: 1; } .pad .left { grid-column: 1; grid-row: 2; } .pad .down { grid-column: 2; grid-row: 2; } .pad .right { grid-column: 3; grid-row: 2; }
+  .pad button { width: 56px; height: 56px; }
   @media (pointer: coarse) { .hint { display: none; } }
   @media (prefers-reduced-motion: reduce) { .dim .val.bump { animation: none; } }
 
@@ -112,14 +114,17 @@
     /* shown for the whole compact layout, not just coarse pointers, so a short
        or narrow window gets the on-screen controls too */
     #controlsGroup { display: block; }
-    body.mode-arrows .pad { display: grid; }
+    body.mode-arrows .pad { display: flex; }
     body.mode-wheel .pedals { display: flex; }
     body.mode-wheel .wheel { display: block; }
     body.sheet-open .pad, body.sheet-open .pedals, body.sheet-open .wheel { display: none; }
 
-    .pad { grid-template-columns: repeat(3, 62px); grid-template-rows: repeat(2, 62px); gap: 8px;
-      right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); }
-    .pad button { font-size: 22px; touch-action: none; }
+    /* accelerate/brake under the left thumb, steering under the right - the same
+       split as the wheel mode, so switching modes does not move your hands */
+    .pad { gap: 8px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .pad-drive { left: calc(12px + env(safe-area-inset-left)); }
+    .pad-steer { right: calc(12px + env(safe-area-inset-right)); }
+    .pad button { width: 68px; height: 68px; font-size: 24px; touch-action: none; }
 
     /* gas and brake fall under the left thumb, the wheel under the right */
     .pedals { position: absolute; flex-direction: column; gap: 10px;
@@ -145,7 +150,7 @@
   @media (max-height: 520px) and (orientation: landscape) {
     .hud { gap: 12px; }
     .dim .val { font-size: 15px; }
-    .pad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(2, 54px); }
+    .pad button { width: 58px; height: 58px; font-size: 21px; }
     .pedals button { width: 76px; height: 58px; font-size: 15px; }
     .wheel { width: 124px; height: 124px; }
     /* side by side, so the sheet stays short on a screen only ~390px tall */
@@ -195,11 +200,14 @@
   Click any vehicle to take control of it. Other vehicles stay where they are and count as obstacles.
 </div>
 
-<div class="pad">
-  <button class="up" data-k="ArrowUp" aria-label="accelerate">↑</button>
-  <button class="left" data-k="ArrowLeft" aria-label="steer left">←</button>
-  <button class="down" data-k="ArrowDown" aria-label="brake or reverse">↓</button>
-  <button class="right" data-k="ArrowRight" aria-label="steer right">→</button>
+<div class="pad pad-drive">
+  <button data-k="ArrowUp" aria-label="accelerate">↑</button>
+  <button data-k="ArrowDown" aria-label="brake or reverse">↓</button>
+</div>
+
+<div class="pad pad-steer">
+  <button data-k="ArrowLeft" aria-label="steer left">←</button>
+  <button data-k="ArrowRight" aria-label="steer right">→</button>
 </div>
 
 <div class="pedals">
@@ -225,8 +233,9 @@ const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
 const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel'), removeBtn = $('removeBtn'), selGroup = $('selGroup');
 const swatchBox = $('swatches');
-const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud'), padEl = document.querySelector('.pad'), pedalsEl = document.querySelector('.pedals');
+const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud');
 const wheelEl = $('wheel'), modeArrows = $('modeArrows'), modeWheel = $('modeWheel');
+const ctrlEls = [...document.querySelectorAll('.pad, .pedals, .wheel')];   // every on-screen control cluster
 
 // ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
 const W = 18.6, H = 15.6;
@@ -444,7 +453,7 @@ function fit() {
     top = hudEl.getBoundingClientRect().bottom + 10;
     // whichever control set is on screen for the current mode
     let ctrlTop = VH;
-    for (const el of [padEl, pedalsEl, wheelEl]) {
+    for (const el of ctrlEls) {
       const b = el.getBoundingClientRect();
       if (b.height) ctrlTop = Math.min(ctrlTop, b.top);
     }
