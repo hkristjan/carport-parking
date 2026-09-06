@@ -53,6 +53,11 @@
   .group button.quiet { background: #fff; color: var(--ink); border: 1px solid var(--hairline); }
   .group button:focus-visible, .group select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
   .group .note { font-size: 12px; color: var(--ink-soft); margin-top: 10px; line-height: 1.45; }
+  .group .sublabel { font-size: 12px; color: var(--ink-soft); margin: 12px 0 7px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .swatches button { width: 24px; height: 24px; padding: 0; border-radius: 3px; border: 1px solid var(--hairline); cursor: pointer; }
+  .swatches button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .swatches button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
   #selGroup[hidden] { display: none; }
   @media (max-width: 900px) { .panel { width: 200px; } .hud { gap: 20px; } }
 
@@ -84,6 +89,8 @@
   <div class="group" id="selGroup">
     <label for="swapModel">Selected vehicle</label>
     <div class="row"><select id="swapModel"></select><button id="removeBtn" class="quiet">Remove</button></div>
+    <div class="sublabel" id="paintLabel">Paint</div>
+    <div class="swatches" id="swatches" role="group" aria-labelledby="paintLabel"></div>
     <div class="note">Click a car on the plan to drive it. Change the model here to swap it in place.</div>
   </div>
 </div>
@@ -107,6 +114,7 @@
 const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
 const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel'), removeBtn = $('removeBtn'), selGroup = $('selGroup');
+const swatchBox = $('swatches');
 
 // ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
 const W = 18.6, H = 15.6;
@@ -150,14 +158,38 @@ for (const m of models) {
 }
 for (const sel of [addModel, swapModel]) for (const m of models) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); }
 
+// ---------- Paint. `null` means "whatever this model ships in".
+const paints = [
+  { name: 'Factory colour', body: null,      trim: null },
+  { name: 'Signal red',     body: '#c62f2f', trim: '#a52323' },
+  { name: 'Slate blue',     body: '#3b4a5c', trim: '#2c3947' },
+  { name: 'Ochre',          body: '#f2b233', trim: '#e29e1f' },
+  { name: 'Sky',            body: '#5aa1d6', trim: '#4a8ab8' },
+  { name: 'Off-white',      body: '#e9ebee', trim: '#c9ccd1' },
+  { name: 'Graphite',       body: '#4a5054', trim: '#383d41' },
+  { name: 'Moss',           body: '#5d7a4f', trim: '#48603d' },
+  { name: 'Sand',           body: '#c9b48a', trim: '#b09b71' },
+];
+for (const p of paints) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.title = p.name; b.setAttribute('aria-label', p.name); b.setAttribute('aria-pressed', 'false');
+  b.style.background = p.body || 'linear-gradient(135deg, #c62f2f 0 25%, #3b4a5c 25% 50%, #f2b233 50% 75%, #5aa1d6 75%)';
+  b.addEventListener('click', () => { if (!active) return; active.paint = p; paintSwatches(); });
+  swatchBox.appendChild(b);
+}
+function paintSwatches() {
+  const cur = active ? active.paint : null;
+  [...swatchBox.children].forEach((b, i) => b.setAttribute('aria-pressed', String(active != null && paints[i] === cur)));
+}
+
 // ---------- Vehicles on the plan
-const vehicles = [];   // { x, y, a, v, steer, spec }
+const vehicles = [];   // { x, y, a, v, steer, spec, paint }
 let active = null;
 const state = { hits: 0, t: 0, hitCooldown: 0, contact: false, flash: 0 };
 
 // spawn at the east end of the street, facing west; slide west if that spot is taken
 function addVehicle(spec) {
-  const v = { x: 16.4, y: 14.05, a: Math.PI, v: 0, steer: 0, spec };
+  const v = { x: 16.4, y: 14.05, a: Math.PI, v: 0, steer: 0, spec, paint: paints[0] };
   for (let tries = 0; tries < 12; tries++) {
     const c = cornersOf(v, spec);
     const blocked = vehicles.some(o => collide(c, v.a, cornersOf(o, o.spec), o.a)) || staticObstacles.some(r => collide(c, v.a, rectCorners(r), 0));
@@ -171,6 +203,7 @@ function select(v) {
   vehicleEl.textContent = v ? v.spec.name : '—';
   selGroup.hidden = !v;
   if (v) swapModel.value = v.spec.id;
+  paintSwatches();
 }
 function reset() {
   vehicles.length = 0; active = null;
@@ -308,12 +341,13 @@ function drawDim(x1, y1, x2, y2, label) {
 
 function drawVehicle(c, live) {
   const spec = c.spec;
+  const body = (c.paint && c.paint.body) || spec.body, trim = (c.paint && c.paint.trim) || spec.trim;
   g.save(); g.translate(px(c.x), px(c.y)); g.rotate(c.a);
   const L = px(spec.len), Wd = px(spec.wid);
   if (live && state.flash > 0) { g.shadowColor = 'rgba(214,69,61,.9)'; g.shadowBlur = px(0.5) * (state.flash / 0.25); }
-  g.fillStyle = spec.body; roundRect(-L / 2, -Wd / 2, L, Wd, px(spec.van ? 0.25 : 0.45)); g.fill();
+  g.fillStyle = body; roundRect(-L / 2, -Wd / 2, L, Wd, px(spec.van ? 0.25 : 0.45)); g.fill();
   g.shadowBlur = 0;
-  g.fillStyle = spec.trim; roundRect(-L / 2 + px(0.25), -Wd / 2 + px(0.15), L - px(0.5), Wd - px(0.3), px(0.35)); g.fill();
+  g.fillStyle = trim; roundRect(-L / 2 + px(0.25), -Wd / 2 + px(0.15), L - px(0.5), Wd - px(0.3), px(0.35)); g.fill();
   const glass = '#2a3238', roof = '#3c454c';
   if (spec.van) {
     g.fillStyle = glass; roundRect(L * 0.28, -Wd / 2 + px(0.2), px(0.5), Wd - px(0.4), px(0.1)); g.fill();
@@ -324,7 +358,7 @@ function drawVehicle(c, live) {
     roundRect(L * 0.10, -Wd / 2 + px(0.22), fw, Wd - px(0.44), px(0.12)); g.fill();
     roundRect(-L * 0.35, -Wd / 2 + px(0.22), rw, Wd - px(0.44), px(0.12)); g.fill();
     g.fillStyle = roof; roundRect(-L * 0.25, -Wd / 2 + px(0.18), cabin * 0.85, Wd - px(0.36), px(0.16)); g.fill();
-    g.fillStyle = spec.body; roundRect(-L * 0.2, -Wd / 2 + px(0.3), cabin * 0.6, Wd - px(0.6), px(0.1)); g.fill();
+    g.fillStyle = body; roundRect(-L * 0.2, -Wd / 2 + px(0.3), cabin * 0.6, Wd - px(0.6), px(0.1)); g.fill();
   }
   g.fillStyle = '#fff4c8'; g.fillRect(L / 2 - px(0.12), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(L / 2 - px(0.12), Wd / 2 - px(0.55), px(0.1), px(0.4));
   g.fillStyle = '#c2352d'; g.fillRect(-L / 2 + px(0.02), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(-L / 2 + px(0.02), Wd / 2 - px(0.55), px(0.1), px(0.4));
@@ -333,7 +367,7 @@ function drawVehicle(c, live) {
     g.save(); g.translate(px(spec.wb / 2), side * (Wd / 2 - px(0.08))); g.rotate(c.steer); g.fillRect(-px(0.3), -px(0.09), px(0.6), px(0.18)); g.restore();
     g.fillRect(-px(spec.wb / 2) - px(0.3), side * (Wd / 2 - px(0.08)) - px(0.09), px(0.6), px(0.18));
   }
-  g.fillStyle = spec.trim; g.fillRect(L * 0.04, -Wd / 2 - px(0.12), px(0.35), px(0.12)); g.fillRect(L * 0.04, Wd / 2, px(0.35), px(0.12));
+  g.fillStyle = trim; g.fillRect(L * 0.04, -Wd / 2 - px(0.12), px(0.35), px(0.12)); g.fillRect(L * 0.04, Wd / 2, px(0.35), px(0.12));
   if (live) { g.strokeStyle = 'rgba(46,53,56,.9)'; g.lineWidth = Math.max(1.5, px(0.05)); g.setLineDash([px(0.2), px(0.12)]); roundRect(-L / 2 - px(0.18), -Wd / 2 - px(0.18), L + px(0.36), Wd + px(0.36), px(0.5)); g.stroke(); }
   g.restore();
 }
