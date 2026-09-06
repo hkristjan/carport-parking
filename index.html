@@ -230,7 +230,6 @@ function finish() {
   tBody.textContent = state.hits === 0 ? 'Level 1 complete — not a scratch.' : `Level 1 complete. ${state.hits === 1 ? 'One bump' : state.hits + ' bumps'} along the way.`;
   toast.classList.add('show'); again.focus();
 }
-again.addEventListener('click', reset);
 
 // ---------- Rendering
 const cv = document.getElementById('c'), g = cv.getContext('2d');
@@ -362,6 +361,7 @@ function draw() {
 const hitsEl = document.getElementById('hits'), timeEl = document.getElementById('time'), speedEl = document.getElementById('speed'), dimHits = document.getElementById('dimHits');
 const toast = document.getElementById('toast'), tTime = document.getElementById('tTime'), tHits = document.getElementById('tHits'), tStars = document.getElementById('tStars'), tBody = document.getElementById('tBody'), again = document.getElementById('again');
 const fmtT = t => t.toFixed(1).replace('.', ',') + ' s';
+again.addEventListener('click', reset);
 function updHits(bump) {
   hitsEl.textContent = state.hits; dimHits.classList.toggle('bad', state.hits > 0);
   if (bump) { hitsEl.classList.remove('bump'); void hitsEl.offsetWidth; hitsEl.classList.add('bump'); }
