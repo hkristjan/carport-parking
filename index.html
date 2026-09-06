@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carport — Level 1</title>
+<style>
+  :root {
+    --paper: #eef0f2;
+    --ground: #f8f9fa;
+    --ink: #2e3538;
+    --ink-soft: #6b7178;
+    --concrete: #c9cdd3;
+    --deck: #a9aeb4;
+    --frame: #2c3335;
+    --slat: #d9dce0;
+    --yellow: #f2b233;
+    --target: #3f8f5a;
+    --hit: #d6453d;
+    --hairline: rgba(46,53,56,.55);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); overflow: hidden;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink);
+    font-variant-numeric: tabular-nums; }
+  canvas { display: block; position: absolute; inset: 0; }
+
+  /* HUD drawn like a plan annotation: a hairline with ticks, a value above it */
+  .hud { position: absolute; left: 24px; top: 20px; display: flex; gap: 40px; pointer-events: none; }
+  .dim { position: relative; padding-bottom: 10px; min-width: 96px; }
+  .dim::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--hairline); }
+  .dim::before { content: ""; position: absolute; left: 0; bottom: -4px; width: 1px; height: 9px; background: var(--hairline);
+    box-shadow: calc(100%) 0 0 var(--hairline); }
+  .dim .val { font-size: 22px; line-height: 1; letter-spacing: -0.01em; }
+  .dim .lab { font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+  .dim.bad .val { color: var(--hit); }
+  .dim .val.bump { animation: bump .28s ease-out; }
+  @keyframes bump { 0% { transform: translateY(0) } 35% { transform: translateY(-4px) } 100% { transform: translateY(0) } }
+
+  .hint { position: absolute; left: 24px; bottom: 20px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; pointer-events: none; }
+  .hint kbd { font: inherit; color: var(--ink); border: 1px solid var(--hairline); border-radius: 3px; padding: 0 5px; margin: 0 1px; }
+
+  .toast { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #fff; border: 1px solid var(--hairline);
+    padding: 26px 30px 22px; min-width: 300px; text-align: left; display: none; }
+  .toast.show { display: block; }
+  .toast h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: -0.015em; }
+  .toast p { margin: 0; color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
+  .toast .row { display: flex; gap: 32px; margin: 18px 0 20px; }
+  .toast .row b { display: block; font-size: 22px; font-weight: 500; }
+  .toast .row span { font-size: 12px; color: var(--ink-soft); }
+  .toast button { font: inherit; font-size: 14px; background: var(--ink); color: #fff; border: 0; padding: 10px 16px; cursor: pointer; border-radius: 3px; }
+  .toast button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+  /* touch pad, only shown on coarse pointers */
+  .pad { position: absolute; right: 18px; bottom: 18px; display: none; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 56px); gap: 6px; }
+  .pad button { font: inherit; font-size: 20px; color: var(--ink); background: rgba(255,255,255,.85); border: 1px solid var(--hairline); border-radius: 6px;
+    touch-action: none; user-select: none; -webkit-user-select: none; }
+  .pad button:active { background: var(--yellow); }
+  .pad .up { grid-column: 2; grid-row: 1; } .pad .left { grid-column: 1; grid-row: 2; } .pad .down { grid-column: 2; grid-row: 2; } .pad .right { grid-column: 3; grid-row: 2; }
+  @media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .dim .val.bump { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <div class="dim" id="dimHits"><div class="val" id="hits">0</div><div class="lab">collisions</div></div>
+  <div class="dim"><div class="val" id="time">0,0 s</div><div class="lab">time</div></div>
+  <div class="dim"><div class="val" id="speed">0 km/h</div><div class="lab">speed</div></div>
+</div>
+
+<div class="hint">
+  <kbd>↑</kbd> accelerate &nbsp; <kbd>↓</kbd> brake / reverse &nbsp; <kbd>←</kbd><kbd>→</kbd> steer &nbsp; <kbd>R</kbd> restart<br>
+  Park in the empty bay on the right of the carport, straight and fully inside the outline.
+</div>
+
+<div class="pad">
+  <button class="up" data-k="ArrowUp" aria-label="accelerate">↑</button>
+  <button class="left" data-k="ArrowLeft" aria-label="steer left">←</button>
+  <button class="down" data-k="ArrowDown" aria-label="brake or reverse">↓</button>
+  <button class="right" data-k="ArrowRight" aria-label="steer right">→</button>
+</div>
+
+<div class="toast" id="toast" role="dialog" aria-live="polite">
+  <h1 id="tTitle">Parked</h1>
+  <p id="tBody">Level 1 complete.</p>
+  <div class="row">
+    <div><b id="tTime">0,0 s</b><span>time</span></div>
+    <div><b id="tHits">0</b><span>collisions</span></div>
+    <div><b id="tStars">★★★</b><span>rating</span></div>
+  </div>
+  <button id="again">Drive again</button>
+</div>
+
+<script>
+(() => {
+'use strict';
+// ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
+const W = 18.6, H = 15.6;
+
+// Static obstacles as axis-aligned rectangles {x,y,w,h,kind}
+const obstacles = [
+  { x: 2.25, y: 0.00, w: 0.22, h: 11.35, kind: 'wall' },      // boundary wall on the left
+  { x: 8.13, y: 0.00, w: 10.47, h: 1.76, kind: 'deck' },      // wooden deck, 12,73 m
+  { x: 2.55, y: 3.57, w: 7.95, h: 0.42, kind: 'frame' },      // carport back beam
+  { x: 2.55, y: 3.99, w: 0.10, h: 5.65, kind: 'frame' },      // left side of the carport
+  { x: 10.40, y: 3.99, w: 0.10, h: 2.20, kind: 'post' },      // right side posts
+  { x: 10.40, y: 7.45, w: 0.10, h: 2.20, kind: 'post' },
+  { x: 2.50, y: 11.23, w: 2.00, h: 0.12, kind: 'curb' },      // kerb, 2,00 m
+  { x: 10.90, y: 11.45, w: 7.70, h: 0.14, kind: 'fence' },    // low fence along the street
+  // parked cars: bay 1 and bay 2
+  { x: 4.07 - 0.875, y: 6.23 - 2.2, w: 1.75, h: 4.40, kind: 'car', body: '#5a5f65', roof: '#3a3e43' },
+  { x: 6.73 - 0.80,  y: 5.80 - 1.8, w: 1.60, h: 3.60, kind: 'car', body: '#e8e9eb', roof: '#b7bbc0' },
+];
+// invisible world bounds
+const bounds = [
+  { x: -1, y: -1, w: W + 2, h: 1 }, { x: -1, y: H, w: W + 2, h: 1 },
+  { x: -1, y: -1, w: 1, h: H + 2 }, { x: W, y: -1, w: 1, h: H + 2 },
+];
+const target = { x: 8.30, y: 4.10, w: 2.10, h: 5.00 };          // bay 3
+const palms = [[13.1, 1.4], [16.7, 1.4]];
+const apron = { x: 2.55, y: 9.65, w: 7.95, h: 1.58 };
+const path  = { x: 8.13, y: 1.76, w: 2.40, h: 1.81 };
+const carport = { x: 2.55, y: 3.57, w: 7.95, h: 6.08 };
+
+// ---------- Player car (bicycle model)
+const CAR = { len: 3.8, wid: 1.9, wheelbase: 2.5 };
+const car = {};
+const start = { x: 11.23, y: 14.05, a: Math.PI };  // facing left, as in the plan
+function reset() {
+  Object.assign(car, { x: start.x, y: start.y, a: start.a, v: 0, steer: 0 });
+  state.hits = 0; state.t = 0; state.done = false; state.parkHold = 0; state.hitCooldown = 0; state.contact = false; state.flash = 0;
+  toast.classList.remove('show'); updHits();
+}
+const state = { hits: 0, t: 0, done: false, parkHold: 0, hitCooldown: 0, contact: false, flash: 0, running: true };
+
+const keys = {};
+addEventListener('keydown', e => { if (e.key.startsWith('Arrow')) e.preventDefault(); keys[e.key] = true; if (e.key === 'r' || e.key === 'R') reset(); });
+addEventListener('keyup',   e => { keys[e.key] = false; });
+document.querySelectorAll('.pad button').forEach(b => {
+  const k = b.dataset.k, on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
+  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
+});
+
+// ---------- Geometry helpers
+function carCorners(c) {
+  const ca = Math.cos(c.a), sa = Math.sin(c.a), hl = CAR.len / 2, hw = CAR.wid / 2;
+  return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([px, py]) => [c.x + px * ca - py * sa, c.y + px * sa + py * ca]);
+}
+// SAT between car OBB and an AABB; returns minimum translation vector to move the car out, or null
+function collide(corners, r) {
+  const rc = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+  const axes = [[1, 0], [0, 1], [Math.cos(car.a), Math.sin(car.a)], [-Math.sin(car.a), Math.cos(car.a)]];
+  let best = null;
+  for (const [ax, ay] of axes) {
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const [x, y] of corners) { const p = x * ax + y * ay; a0 = Math.min(a0, p); a1 = Math.max(a1, p); }
+    for (const [x, y] of rc)      { const p = x * ax + y * ay; b0 = Math.min(b0, p); b1 = Math.max(b1, p); }
+    const overlap = Math.min(a1, b1) - Math.max(a0, b0);
+    if (overlap <= 0) return null;
+    if (!best || overlap < best.d) {
+      const carMid = (a0 + a1) / 2, boxMid = (b0 + b1) / 2, s = carMid < boxMid ? -1 : 1;
+      best = { d: overlap, nx: ax * s, ny: ay * s };
+    }
+  }
+  return best;
+}
+
+// ---------- Simulation
+function step(dt) {
+  if (state.done) return;
+  state.t += dt;
+  const up = keys.ArrowUp, down = keys.ArrowDown, left = keys.ArrowLeft, right = keys.ArrowRight;
+
+  // longitudinal: engine, brakes, reverse, rolling resistance
+  const ACC = 3.2, BRAKE = 7.5, REV_ACC = 2.2, VMAX = 5.5, VREV = -2.6, DRAG = 0.9;
+  let a = 0;
+  if (up)        a = car.v < -0.05 ? BRAKE : ACC;
+  else if (down) a = car.v >  0.05 ? -BRAKE : -REV_ACC;
+  else           a = -Math.sign(car.v) * Math.min(Math.abs(car.v) / dt, DRAG + Math.abs(car.v) * 0.6);
+  car.v = Math.max(VREV, Math.min(VMAX, car.v + a * dt));
+  if (!up && !down && Math.abs(car.v) < 0.02) car.v = 0;
+
+  // steering: max lock shrinks with speed, wheel self-centres
+  const lock = 0.62 * (1 - 0.55 * Math.min(1, Math.abs(car.v) / VMAX));
+  const want = left ? -lock : right ? lock : 0;
+  const rate = (left || right) ? 3.2 : 4.5;
+  car.steer += Math.max(-rate * dt, Math.min(rate * dt, want - car.steer));
+
+  // kinematic bicycle
+  car.x += car.v * Math.cos(car.a) * dt;
+  car.y += car.v * Math.sin(car.a) * dt;
+  car.a += (car.v / CAR.wheelbase) * Math.tan(car.steer) * dt;
+
+  // collisions
+  let hitNow = false;
+  for (let i = 0; i < 3; i++) {
+    const corners = carCorners(car);
+    let any = false;
+    for (const r of [...obstacles, ...bounds]) {
+      const m = collide(corners, r);
+      if (!m) continue;
+      any = hitNow = true;
+      car.x += m.nx * (m.d + 0.002); car.y += m.ny * (m.d + 0.002);
+      const vx = car.v * Math.cos(car.a), vy = car.v * Math.sin(car.a);
+      if (vx * m.nx + vy * m.ny < 0) car.v *= -0.25;   // soft bounce
+    }
+    if (!any) break;
+  }
+  state.hitCooldown = Math.max(0, state.hitCooldown - dt);
+  if (hitNow && !state.contact && state.hitCooldown === 0) {
+    state.hits++; state.hitCooldown = 0.4; state.flash = 0.25; updHits(true);
+  }
+  state.contact = hitNow;
+  state.flash = Math.max(0, state.flash - dt);
+
+  // parking check: all corners inside the bay, nearly stopped, nearly straight
+  const inside = carCorners(car).every(([x, y]) => x >= target.x && x <= target.x + target.w && y >= target.y && y <= target.y + target.h);
+  const straight = Math.abs(Math.sin(car.a)) > Math.cos(12 * Math.PI / 180);
+  if (inside && straight && Math.abs(car.v) < 0.05) { state.parkHold += dt; if (state.parkHold > 1.0) finish(); }
+  else state.parkHold = 0;
+}
+
+function finish() {
+  state.done = true; car.v = 0;
+  const stars = state.hits === 0 ? '★★★' : state.hits <= 2 ? '★★☆' : '★☆☆';
+  tTime.textContent = fmtT(state.t); tHits.textContent = state.hits; tStars.textContent = stars;
+  tBody.textContent = state.hits === 0 ? 'Level 1 complete — not a scratch.' : `Level 1 complete. ${state.hits === 1 ? 'One bump' : state.hits + ' bumps'} along the way.`;
+  toast.classList.add('show'); again.focus();
+}
+again.addEventListener('click', reset);
+
+// ---------- Rendering
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+let S = 40, OX = 0, OY = 0;
+function fit() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  S = Math.min(innerWidth / W, innerHeight / H) * 0.94;
+  OX = (innerWidth - W * S) / 2; OY = (innerHeight - H * S) / 2;
+}
+addEventListener('resize', fit); fit();
+const px = m => m * S;
+function rect(r, fill) { g.fillStyle = fill; g.fillRect(px(r.x), px(r.y), px(r.w), px(r.h)); }
+
+function drawDim(x1, y1, x2, y2, label) {
+  g.strokeStyle = 'rgba(46,53,56,.5)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(px(x1), px(y1)); g.lineTo(px(x2), px(y2)); g.stroke();
+  const horiz = Math.abs(y2 - y1) < 1e-6, t = 0.09;
+  for (const [x, y] of [[x1, y1], [x2, y2]]) {
+    g.beginPath();
+    if (horiz) { g.moveTo(px(x), px(y - t)); g.lineTo(px(x), px(y + t)); } else { g.moveTo(px(x - t), px(y)); g.lineTo(px(x + t), px(y)); }
+    g.stroke();
+  }
+  g.fillStyle = '#4b5257'; g.font = `${Math.max(10, S * 0.28)}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  if (horiz) g.fillText(label, px((x1 + x2) / 2), px(y1) - 3);
+  else { g.save(); g.translate(px(x1) - 4, px((y1 + y2) / 2)); g.rotate(-Math.PI / 2); g.fillText(label, 0, 0); g.restore(); }
+}
+
+function drawParkedCar(r) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = px(0.32);
+  g.fillStyle = r.body; roundRect(px(r.x), px(r.y), px(r.w), px(r.h), rad); g.fill();
+  g.fillStyle = r.roof; roundRect(px(r.x + 0.16), px(r.y + r.h * 0.28), px(r.w - 0.32), px(r.h * 0.42), px(0.14)); g.fill();
+  g.fillStyle = 'rgba(20,24,28,.55)';
+  roundRect(px(r.x + 0.2), px(r.y + r.h * 0.18), px(r.w - 0.4), px(r.h * 0.12), px(0.08)); g.fill();
+  roundRect(px(r.x + 0.2), px(r.y + r.h * 0.72), px(r.w - 0.4), px(r.h * 0.10), px(0.08)); g.fill();
+}
+function roundRect(x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
+
+function drawPlayer() {
+  g.save(); g.translate(px(car.x), px(car.y)); g.rotate(car.a);
+  const L = px(CAR.len), Wd = px(CAR.wid);
+  if (state.flash > 0) { g.shadowColor = 'rgba(214,69,61,.9)'; g.shadowBlur = px(0.5) * (state.flash / 0.25); }
+  g.fillStyle = '#f2b233'; roundRect(-L / 2, -Wd / 2, L, Wd, px(0.45)); g.fill();
+  g.shadowBlur = 0;
+  g.fillStyle = '#e29e1f'; roundRect(-L / 2 + px(0.25), -Wd / 2 + px(0.15), L - px(0.5), Wd - px(0.3), px(0.35)); g.fill();
+  g.fillStyle = '#2a3238';
+  roundRect(px(0.35), -Wd / 2 + px(0.22), px(0.55), Wd - px(0.44), px(0.12)); g.fill();       // windscreen (front = +x)
+  roundRect(-px(1.25), -Wd / 2 + px(0.22), px(0.45), Wd - px(0.44), px(0.12)); g.fill();       // rear window
+  g.fillStyle = '#3c454c'; roundRect(-px(0.75), -Wd / 2 + px(0.18), px(1.05), Wd - px(0.36), px(0.16)); g.fill(); // roof
+  g.fillStyle = '#f2b233'; roundRect(-px(0.55), -Wd / 2 + px(0.3), px(0.7), Wd - px(0.6), px(0.1)); g.fill();
+  g.fillStyle = '#fff4c8'; g.fillRect(L / 2 - px(0.12), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(L / 2 - px(0.12), Wd / 2 - px(0.55), px(0.1), px(0.4));
+  g.fillStyle = '#c2352d'; g.fillRect(-L / 2 + px(0.02), -Wd / 2 + px(0.15), px(0.1), px(0.4)); g.fillRect(-L / 2 + px(0.02), Wd / 2 - px(0.55), px(0.1), px(0.4));
+  // steered front wheels
+  g.fillStyle = '#1b1f22';
+  for (const side of [-1, 1]) {
+    g.save(); g.translate(px(1.1), side * (Wd / 2 - px(0.08))); g.rotate(car.steer); g.fillRect(-px(0.3), -px(0.09), px(0.6), px(0.18)); g.restore();
+    g.fillRect(-px(1.4), side * (Wd / 2 - px(0.08)) - px(0.09), px(0.6), px(0.18));
+  }
+  g.fillStyle = '#c7912a'; g.fillRect(px(0.15), -Wd / 2 - px(0.12), px(0.35), px(0.12)); g.fillRect(px(0.15), Wd / 2, px(0.35), px(0.12)); // mirrors
+  g.restore();
+}
+
+function draw() {
+  g.setTransform(Math.min(2, devicePixelRatio || 1), 0, 0, Math.min(2, devicePixelRatio || 1), 0, 0);
+  g.clearRect(0, 0, innerWidth, innerHeight);
+  g.translate(OX, OY);
+
+  // ground / street
+  rect({ x: 0, y: 0, w: W, h: H }, '#f8f9fa');
+  rect({ x: 0, y: 11.6, w: W, h: H - 11.6 }, '#f1f2f4');
+
+  // deck planks
+  rect(obstacles[1], '#aeb3b8');
+  g.strokeStyle = 'rgba(60,66,70,.35)'; g.lineWidth = 1;
+  for (let y = obstacles[1].y + 0.16; y < obstacles[1].y + obstacles[1].h; y += 0.16) { g.beginPath(); g.moveTo(px(obstacles[1].x), px(y)); g.lineTo(px(obstacles[1].x + obstacles[1].w), px(y)); g.stroke(); }
+
+  rect(path, '#bfc4ca');       // walkway to the deck
+  rect(apron, '#c9cdd3');      // concrete apron
+  rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb'); // carport floor
+
+  // target bay
+  g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = state.parkHold > 0 ? '#2e8a4c' : '#3f8f5a'; g.lineWidth = Math.max(1.5, px(0.05));
+  g.fillStyle = state.parkHold > 0 ? 'rgba(63,143,90,.32)' : 'rgba(63,143,90,.13)';
+  g.fillRect(px(target.x), px(target.y), px(target.w), px(target.h)); g.strokeRect(px(target.x), px(target.y), px(target.w), px(target.h)); g.restore();
+  g.fillStyle = 'rgba(63,143,90,.75)'; g.font = `500 ${S * 0.9}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('P', px(target.x + target.w / 2), px(target.y + target.h / 2));
+
+  // static obstacles
+  for (const o of obstacles) {
+    if (o.kind === 'deck') continue;
+    if (o.kind === 'car') { drawParkedCar(o); continue; }
+    rect(o, o.kind === 'wall' ? '#a3a8ae' : o.kind === 'curb' ? '#8f949a' : o.kind === 'fence' ? '#3a4144' : '#2c3335');
+  }
+  // wall edge shading
+  rect({ x: 2.25, y: 0, w: 0.06, h: 11.35 }, '#8a8f95');
+
+  drawPlayer();
+
+  // carport roof slats, drawn over everything beneath the roof
+  g.save(); g.beginPath(); g.rect(px(carport.x), px(carport.y + 0.42), px(carport.w), px(carport.h - 0.9)); g.clip();
+  g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, px(0.045));
+  for (let x = carport.x + 0.1; x < carport.x + carport.w; x += 0.1) { g.beginPath(); g.moveTo(px(x), px(carport.y)); g.lineTo(px(x), px(carport.y + carport.h)); g.stroke(); }
+  g.restore();
+  rect({ x: carport.x, y: carport.y + carport.h - 0.48, w: carport.w, h: 0.48 }, 'rgba(44,51,53,.92)'); // front roof beam (open below)
+
+  // palms on the deck
+  for (const [x, y] of palms) {
+    g.strokeStyle = '#4f8a3a'; g.lineWidth = Math.max(1.5, px(0.07)); g.lineCap = 'round';
+    for (let i = 0; i < 9; i++) { const a = i * Math.PI * 2 / 9 + 0.3; g.beginPath(); g.moveTo(px(x), px(y)); g.quadraticCurveTo(px(x + Math.cos(a) * 0.5), px(y + Math.sin(a) * 0.5 - 0.1), px(x + Math.cos(a) * 1.05), px(y + Math.sin(a) * 1.05)); g.stroke(); }
+    g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(px(x), px(y), px(0.16), 0, Math.PI * 2); g.fill();
+  }
+
+  // dimension annotations, as on the plan
+  drawDim(2.55, 2.1, 10.50, 2.1, '7,98 m');
+  drawDim(8.13, 2.9, 10.53, 2.9, '2,40 m');
+  drawDim(2.60, 11.95, 4.60, 11.95, '2,00 m');
+  drawDim(4.60, 11.95, 10.60, 11.95, '6,00 m');
+  drawDim(11.9, 3.57, 11.9, 11.15, '7,58 m');
+  drawDim(8.13, 1.35, 18.6, 1.35, '12,73 m');
+
+  if (state.parkHold > 0 && !state.done) {
+    g.fillStyle = 'rgba(46,53,56,.9)'; g.font = `${Math.max(11, S * 0.3)}px "Helvetica Neue", Helvetica, Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'top';
+    g.fillText('hold still…', px(target.x + target.w / 2), px(target.y + target.h) + 6);
+  }
+}
+
+// ---------- HUD
+const hitsEl = document.getElementById('hits'), timeEl = document.getElementById('time'), speedEl = document.getElementById('speed'), dimHits = document.getElementById('dimHits');
+const toast = document.getElementById('toast'), tTime = document.getElementById('tTime'), tHits = document.getElementById('tHits'), tStars = document.getElementById('tStars'), tBody = document.getElementById('tBody'), again = document.getElementById('again');
+const fmtT = t => t.toFixed(1).replace('.', ',') + ' s';
+function updHits(bump) {
+  hitsEl.textContent = state.hits; dimHits.classList.toggle('bad', state.hits > 0);
+  if (bump) { hitsEl.classList.remove('bump'); void hitsEl.offsetWidth; hitsEl.classList.add('bump'); }
+}
+
+// ---------- Loop with fixed timestep
+let last = performance.now(), acc = 0; const DT = 1 / 120;
+function loop(now) {
+  acc += Math.min(0.1, (now - last) / 1000); last = now;
+  while (acc >= DT) { step(DT); acc -= DT; }
+  draw();
+  timeEl.textContent = fmtT(state.t);
+  speedEl.textContent = Math.round(Math.abs(car.v) * 3.6) + ' km/h';
+  requestAnimationFrame(loop);
+}
+reset();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
