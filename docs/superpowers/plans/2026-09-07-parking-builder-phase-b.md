@@ -84,7 +84,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadApp } from './extract.mjs';
 
-const { edit, layout } = loadApp();
+const { edit, layout, geom } = loadApp();
 
 const doc = () => Object.assign(layout.blank('t'), {
   nodes: { a: [0, 0], b: [5, 0], c: [5, 5], orphan: [9, 9] },
@@ -97,13 +97,11 @@ const doc = () => Object.assign(layout.blank('t'), {
 // Carried over from Phase A's gap list: these two are the physics and click-selection
 // entry points, and the editor's hit-testing depends on the second.
 test('cornersOf places a vehicle box at its position and heading', () => {
-  const { geom } = loadApp();
   const bb = geom.bboxOf(geom.cornersOf({ x: 5, y: 5, a: 0 }, { len: 4, wid: 2 }).map(c => c));
   assert.deepEqual([bb.x, bb.y, bb.w, bb.h], [3, 4, 4, 2]);
 });
 
 test('pointInVehicle accepts points inside the body and rejects distant ones', () => {
-  const { geom } = loadApp();
   const v = { x: 5, y: 5, a: 0, spec: { len: 4, wid: 2 } };
   assert.equal(geom.pointInVehicle(5, 5, v), true);
   assert.equal(geom.pointInVehicle(6.9, 5, v), true, 'just inside, with the 0.15 slack');
@@ -115,7 +113,7 @@ test('gcNodes drops only nodes no wall references', () => {
   assert.deepEqual(Object.keys(out.nodes).sort(), ['a', 'b', 'c']);
 });
 
-test('gcNodes keeps nodes referenced by an area polygon id list, if any', () => {
+test('gcNodes drops an orphan even when an area covers the same point', () => {
   const d = doc();
   d.areas.push({ id: 'ar1', type: 'ground', poly: [[9, 9], [10, 9], [10, 10]] });
   // areas hold literal points, not node ids, so the orphan is still dropped
@@ -902,8 +900,11 @@ function commitChain(pts, snaps) {
     const s = snaps[i];
     if (s && s.kind === 'node') { ids.push(s.nodeId); continue; }
     if (s && s.kind === 'wall') {
+      // splitWall REPLACES the wall with two halves, so a second point in the same
+      // chain that snapped to the same wall would name an id that no longer exists.
+      // splitWall reports nodeId null for an unknown id; fall back to a plain node.
       const r = App.edit.splitWall(next, s.wallId, pts[i]);
-      next = r.doc; ids.push(r.nodeId); continue;
+      if (r.nodeId) { next = r.doc; ids.push(r.nodeId); continue; }
     }
     const r = App.edit.addNode(next, pts[i]);
     next = r.doc; ids.push(r.id);
@@ -1150,6 +1151,11 @@ CSS, alongside the existing `.group` rules:
 ```
 
 Populate `#pType` from `App.registry.types`, filtered to `kind === 'wall'`.
+
+Add every new id to the `$()` handles line at the top of the IIFE — `propsGroup`, `pT`,
+`pLen`, `pAng`, `pType`, `pNote`, `pAnchorFrom`, `pAnchorTo`, `toolRow`, `toolSelect`,
+`toolWall`, `modeDrive`, `modeBuild`. This file addresses elements through `$('id')`
+handles, never through bare `window.<id>` globals.
 
 - [ ] **Step 2: Sync the panel to the selection**
 
