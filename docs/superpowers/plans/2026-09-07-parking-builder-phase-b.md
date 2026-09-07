@@ -518,9 +518,16 @@ test('clampPt holds a point inside the plot', () => {
   assert.deepEqual(edit.clampPt(d, [5, 5]), [5, 5], 'an interior point is untouched');
 });
 
-test('snap never returns a non-finite point', () => {
-  for (const p of [[0, 0], [5, 0], [3.42, 7.61], [1e6, -1e6]])
-    assert.ok(edit.snap(snapDoc(), p, { radius: 0.2, from: [0, 0] }).pt.every(Number.isFinite));
+test('snap never returns a non-finite point, including for non-finite input', () => {
+  const bad = [[NaN, 0], [Infinity, 0], [0, NaN], [-Infinity, -Infinity]];
+  for (const p of [[0, 0], [5, 0], [3.42, 7.61], [1e6, -1e6], ...bad])
+    assert.ok(edit.snap(snapDoc(), p, { radius: 0.2, from: [0, 0] }).pt.every(Number.isFinite),
+      `snap returned a non-finite point for ${JSON.stringify(p)}`);
+});
+
+test('clampPt replaces a non-finite component rather than propagating it', () => {
+  assert.deepEqual(edit.clampPt(snapDoc(), [NaN, 5]), [0, 5]);
+  assert.deepEqual(edit.clampPt(snapDoc(), [Infinity, 3]), [20, 3]);
 });
 ```
 
@@ -535,7 +542,14 @@ Expected: FAIL — `edit.snap is not a function`
   // Priority: an existing node (the merge case) beats a wall centreline (the split
   // case) beats the grid beats an angle constraint. The radius is a WORLD distance the
   // caller derives from screen pixels, so the feel does not change with zoom.
+  const finite2 = p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]);
+
   function snap(doc, pt, opts) {
+    // Defend the invariant at the door. Every tier below compares against `pt`, and every
+    // comparison with NaN is false, so a non-finite input would fall through all of them
+    // and be echoed straight back out — handing a NaN to the caller that puts it in the
+    // document, after which a vehicle silently teleports away.
+    if (!finite2(pt)) return { pt: [0, 0], kind: 'free' };
     const o = Object.assign({ radius: 0.2, grid: 0.5, from: null, angleStep: 15, enabled: true }, opts);
     if (!o.enabled) return { pt: [pt[0], pt[1]], kind: 'free' };
 
@@ -575,9 +589,10 @@ Expected: FAIL — `edit.snap is not a function`
     return { pt: [pt[0], pt[1]], kind: 'free' };
   }
 
+  // Math.min/max propagate NaN, so a non-finite component must be replaced, not clamped.
   const clampPt = (doc, pt) => [
-    Math.min(doc.plot.w, Math.max(0, pt[0])),
-    Math.min(doc.plot.h, Math.max(0, pt[1])),
+    Number.isFinite(pt[0]) ? Math.min(doc.plot.w, Math.max(0, pt[0])) : 0,
+    Number.isFinite(pt[1]) ? Math.min(doc.plot.h, Math.max(0, pt[1])) : 0,
   ];
 ```
 
