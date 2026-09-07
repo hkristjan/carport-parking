@@ -908,6 +908,7 @@ function drawRun(run, stroke) {
 // between the two calls, because today's scene draws its carport roof and palms
 // over the cars but its floor and bay outlines under them.
 function paintList(from, to) {
+  g.save();
   for (const d of world.drawList) {
     if (d.z < from || d.z >= to) continue;
     if (d.kind === 'area' && d.layer.fill) drawArea(d.obj.poly, d.layer.fill);
@@ -923,6 +924,7 @@ function paintList(from, to) {
     g.restore();
   }
   if (DIM_Z >= from && DIM_Z < to) for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label);
+  g.restore();
 }
 
 function draw() {
@@ -935,6 +937,7 @@ function draw() {
   const deck = staticObstacles[1];
   rect(deck, '#aeb3b8');
   g.strokeStyle = 'rgba(60,66,70,.35)';
+  g.lineWidth = 1;
   for (let y = deck.y + 0.16; y < deck.y + deck.h; y += 0.16) { g.beginPath(); g.moveTo(px(deck.x), px(y)); g.lineTo(px(deck.x + deck.w), px(y)); g.stroke(); }
 
   rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb');
