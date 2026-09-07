@@ -876,8 +876,12 @@ addEventListener('keydown', e => {
   // thickness box also fires the R reset. INPUT was missing from this guard.
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
-  if ((tag === 'SELECT' || tag === 'BUTTON') && !e.key.startsWith('Arrow')) return;
+  // Build routing comes BEFORE the SELECT/BUTTON guard. Clicking the Build toggle leaves
+  // that button focused, so a guard-first order would swallow the user's very next
+  // Escape, Delete or Cmd-Z. editorKey does not preventDefault on keys it ignores, so a
+  // focused control keeps its native Space/Enter/arrow behaviour either way.
   if (isBuild()) { editorKey(e); return; }      // build mode never drives the car
+  if ((tag === 'SELECT' || tag === 'BUTTON') && !e.key.startsWith('Arrow')) return;
   if (e.key.startsWith('Arrow')) e.preventDefault();
   keys[e.key] = true;
   if (e.key === 'r' || e.key === 'R') reset();
