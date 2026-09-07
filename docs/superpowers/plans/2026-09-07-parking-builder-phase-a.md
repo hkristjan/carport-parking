@@ -518,10 +518,18 @@ test('the three bays carry over', () => {
   ]);
 });
 
-test('both palms, five dims and the spawn carry over', () => {
+test('both palms, all five dims and the spawn carry over by value', () => {
   const doc = defaults.carport;
-  assert.equal(doc.items.filter(i => i.type === 'palm').length, 2);
-  assert.equal(doc.dims.length, 5);
+  assert.deepEqual(doc.items.filter(i => i.type === 'palm').map(i => i.at),
+    [[13.1, 1.4], [16.7, 1.4]]);
+  // by value, not by count: the labels use comma decimal separators deliberately
+  assert.deepEqual(doc.dims, [
+    { from: [2.55, 2.10],  to: [10.50, 2.10],  label: '7,98 m' },
+    { from: [8.13, 2.90],  to: [10.53, 2.90],  label: '2,40 m' },
+    { from: [2.60, 11.95], to: [4.60, 11.95],  label: '2,00 m' },
+    { from: [4.60, 11.95], to: [10.60, 11.95], label: '6,00 m' },
+    { from: [8.13, 1.35],  to: [18.60, 1.35],  label: '12,73 m' },
+  ]);
   assert.deepEqual(doc.spawn.at, [16.4, 14.05]);
   assert.equal(round(doc.spawn.a), round(Math.PI));
 });
