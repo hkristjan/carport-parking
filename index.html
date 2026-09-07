@@ -282,7 +282,15 @@ App.registry = (() => {
   const VEHICLE_Z = 50, BAY_Z = 35, DIM_Z = 80;
   const types = {
     ground:  { kind: 'area', solid: false, layers: [{ z: 0,  fill: '#f8f9fa' }] },
-    street:  { kind: 'area', solid: false, layers: [{ z: 5,  fill: '#e9ebee' }] },
+    street:  { kind: 'area', solid: false, layers: [{ z: 5, draw: (g, a, v) => {
+      g.fillStyle = '#e9ebee'; g.beginPath();
+      a.poly.forEach(([x, y], i) => i ? g.lineTo(v.px(x), v.px(y)) : g.moveTo(v.px(x), v.px(y)));
+      g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(46,53,56,.35)'; g.lineWidth = 1;
+      const xs = a.poly.map(p => p[0]), x1 = Math.max(...xs);
+      const ys = a.poly.map(p => p[1]), mid = Math.min(...ys) + 1.85;
+      for (let x = Math.min(...xs) + 0.5; x < x1; x += 1.2) { g.beginPath(); g.moveTo(v.px(x), v.px(mid)); g.lineTo(v.px(x + 0.6), v.px(mid)); g.stroke(); }
+    } }] },
     deck:    { kind: 'item', solid: true,  footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20 }] },
     path:    { kind: 'area', solid: false, layers: [{ z: 25, fill: '#bfc4ca' }] },
     apron:   { kind: 'area', solid: false, layers: [{ z: 26, fill: '#c9cdd3' }] },
@@ -884,33 +892,53 @@ function drawVehicle(c, live) {
   g.restore();
 }
 
+function drawArea(poly, fill) {
+  g.fillStyle = fill; g.beginPath();
+  poly.forEach(([x, y], i) => i ? g.lineTo(px(x), px(y)) : g.moveTo(px(x), px(y)));
+  g.closePath(); g.fill();
+}
+// One stroked path per run: canvas mitres the corners for us.
+function drawRun(run, stroke) {
+  g.strokeStyle = stroke; g.lineWidth = px(run.t); g.lineJoin = 'miter'; g.miterLimit = 4; g.lineCap = 'butt';
+  g.beginPath();
+  run.points.forEach(([x, y], i) => i ? g.lineTo(px(x), px(y)) : g.moveTo(px(x), px(y)));
+  g.stroke();
+}
+// Paint every drawList entry whose z falls in [from, to). Vehicles are painted
+// between the two calls, because today's scene draws its carport roof and palms
+// over the cars but its floor and bay outlines under them.
+function paintList(from, to) {
+  for (const d of world.drawList) {
+    if (d.z < from || d.z >= to) continue;
+    if (d.kind === 'area' && d.layer.fill) drawArea(d.obj.poly, d.layer.fill);
+    else if (d.layer.draw) d.layer.draw(g, d.obj, { px });
+  }
+  // walls stroke per run rather than per wall, so they are painted from world.runs
+  // instead of drawList. Each run carries the z its type declared.
+  for (const run of world.runs) if (run.z >= from && run.z < to) drawRun(run, run.stroke);
+  const { BAY_Z, DIM_Z } = App.registry;
+  if (BAY_Z >= from && BAY_Z < to) {
+    g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
+    for (const b of world.bays) g.strokeRect(px(b.rect[0]), px(b.rect[1]), px(b.rect[2]), px(b.rect[3]));
+    g.restore();
+  }
+  if (DIM_Z >= from && DIM_Z < to) for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label);
+}
+
 function draw() {
   const dpr = Math.min(2, devicePixelRatio || 1);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, VW, VH);
   g.translate(OX, OY);
-
-  rect({ x: 0, y: 0, w: W, h: H }, '#f8f9fa');
-  rect({ x: 0, y: 11.6, w: W, h: H - 11.6 }, '#e9ebee');                 // street
-  g.strokeStyle = 'rgba(46,53,56,.35)'; g.lineWidth = 1;
-  for (let x = 0.5; x < W; x += 1.2) { g.beginPath(); g.moveTo(px(x), px(13.45)); g.lineTo(px(x + 0.6), px(13.45)); g.stroke(); } // centre line
+  paintList(0, App.registry.VEHICLE_Z);
 
   const deck = staticObstacles[1];
   rect(deck, '#aeb3b8');
   g.strokeStyle = 'rgba(60,66,70,.35)';
   for (let y = deck.y + 0.16; y < deck.y + deck.h; y += 0.16) { g.beginPath(); g.moveTo(px(deck.x), px(y)); g.lineTo(px(deck.x + deck.w), px(y)); g.stroke(); }
 
-  rect(path, '#bfc4ca'); rect(apron, '#c9cdd3');
   rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb');
 
-  g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
-  for (const b of bays) g.strokeRect(px(b.x), px(b.y), px(b.w), px(b.h));
-  g.restore();
-
-  for (const o of staticObstacles) {
-    if (o.kind === 'deck') continue;
-    rect(o, o.kind === 'wall' ? '#a3a8ae' : o.kind === 'curb' ? '#8f949a' : o.kind === 'fence' ? '#3a4144' : '#2c3335');
-  }
   // fence posts on the south boundary
   g.fillStyle = '#2c3335';
   for (let x = 0.4; x < W; x += 2.0) g.fillRect(px(x) - px(0.08), px(15.22), px(0.16), px(0.32));
@@ -918,6 +946,7 @@ function draw() {
 
   for (const v of vehicles) if (v !== active) drawVehicle(v, false);
   if (active) drawVehicle(active, true);
+  paintList(App.registry.VEHICLE_Z, Infinity);
 
   g.save(); g.beginPath(); g.rect(px(carport.x), px(carport.y + 0.42), px(carport.w), px(carport.h - 0.9)); g.clip();
   g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, px(0.045));
@@ -931,11 +960,6 @@ function draw() {
     g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(px(x), px(y), px(0.16), 0, Math.PI * 2); g.fill();
   }
 
-  drawDim(2.55, 2.1, 10.50, 2.1, '7,98 m');
-  drawDim(8.13, 2.9, 10.53, 2.9, '2,40 m');
-  drawDim(2.60, 11.95, 4.60, 11.95, '2,00 m');
-  drawDim(4.60, 11.95, 10.60, 11.95, '6,00 m');
-  drawDim(8.13, 1.35, 18.6, 1.35, '12,73 m');
 }
 
 // ---------- HUD + loop
