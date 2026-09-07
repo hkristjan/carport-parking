@@ -330,19 +330,41 @@ test('chainToDoc does not mutate its input document', () => {
   assert.equal(JSON.stringify(d), before);
 });
 
-test('replaceDoc-style in-place swap survives next === doc aliasing', () => {
-  const doc = { a: 1, nodes: { n1: [0, 0] }, walls: [] };
-  const next = doc;                                   // exactly what endDrag passes
-  const src = Object.assign({}, next);                // the fix: snapshot first
-  for (const k of Object.keys(doc)) delete doc[k];
-  Object.assign(doc, src);
-  assert.deepEqual(doc, { a: 1, nodes: { n1: [0, 0] }, walls: [] });
+test('applyDoc(live, live) leaves the document intact and returns a snapshot', () => {
+  const live = doc();
+  const before = JSON.stringify(live);
+  const prev = edit.applyDoc(live, live);              // exactly what endDrag used to pass
+  assert.equal(JSON.stringify(live), before, 'the document is not emptied by the self-swap');
+  assert.deepEqual(prev, JSON.parse(before));
 });
 
-test('the unsafe order empties the document when next === doc', () => {
-  const doc = { a: 1, nodes: { n1: [0, 0] } };
-  const next = doc;
-  for (const k of Object.keys(doc)) delete doc[k];
-  Object.assign(doc, next);                           // copies nothing
-  assert.deepEqual(doc, {});
+test('the snapshot applyDoc returns is detached from the live document', () => {
+  const live = doc();
+  const prev = edit.applyDoc(live, live);
+  prev.nodes.a[0] = 99;
+  prev.walls.push({ id: 'wX', from: 'a', to: 'b', t: 0.2, type: 'wall' });
+  assert.deepEqual(live.nodes.a, [0, 0]);
+  assert.equal(live.walls.length, 2);
+});
+
+test('applyDoc installs a different document and hands back the old one', () => {
+  const live = doc();
+  const before = JSON.parse(JSON.stringify(live));
+  const other = Object.assign(layout.blank('other'), { nodes: { z: [1, 2] }, walls: [] });
+  const prev = edit.applyDoc(live, other);
+  assert.deepEqual(live, other);
+  assert.deepEqual(prev, before);
+});
+
+test('applyDoc keeps the identity of the live document', () => {
+  const live = doc();
+  const ref = live;
+  edit.applyDoc(live, Object.assign(layout.blank('other'), { nodes: { z: [1, 2] } }));
+  assert.equal(live, ref, 'callers hold this reference forever; it must not be replaced');
+});
+
+test('applyDoc drops keys the incoming document does not have', () => {
+  const live = Object.assign(layout.blank('t'), { stray: 1 });
+  edit.applyDoc(live, layout.blank('t'));
+  assert.equal('stray' in live, false);
 });

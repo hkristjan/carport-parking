@@ -781,6 +781,18 @@ App.edit = (() => {
     isNaN(pt[1]) ? 0 : Math.min(doc.plot.h, Math.max(0, pt[1])),
   ];
 
+  // Replace the contents of `live` in place with `next`, and return the previous contents
+  // as a detached snapshot. `next` is sometimes `live` itself — a drag that ends without a
+  // merge passes the live document — so the incoming keys are snapshotted BEFORE `live` is
+  // cleared. Clearing first would empty `next` too and leave the document permanently blank.
+  function applyDoc(live, next) {
+    const prev = clone(live);
+    const src = Object.assign({}, next);
+    for (const k of Object.keys(live)) delete live[k];
+    Object.assign(live, src);
+    return prev;
+  }
+
   // Fold a drawn chain into the document. Pure: takes the points and their snap results
   // and returns a new document. Every guard here prevents a corrupt document, so it lives
   // in this namespace where the tests can reach it.
@@ -808,7 +820,7 @@ App.edit = (() => {
 
   return {
     gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength,
-    snap, clampPt, chainToDoc,
+    snap, clampPt, applyDoc, chainToDoc,
   };
 })();
 </script>
@@ -988,17 +1000,12 @@ function syncProps() {
   pNote.textContent = multi ? `${ws.length} walls selected — thickness and type apply to all` : '';
 }
 
-// Every document mutation goes through here: snapshot for undo, swap, recompile.
+function commit(next) { history.push(doc); replaceDoc(next); }
+// Every document mutation goes through here: swap, prune the selection, recompile.
 // The recompile is not optional — world.runs and world.drawList hold live references
 // into the document, so skipping it leaves collision stale while rendering looks right.
-function commit(next) { history.push(doc); replaceDoc(next); syncProps(); }
 function replaceDoc(next) {
-  // Snapshot FIRST. `next` is sometimes `doc` itself (a drag that ends without a merge
-  // passes the live document), and clearing doc's keys would then empty `next` too,
-  // leaving the document permanently blank and every later frame throwing.
-  const src = Object.assign({}, next);
-  for (const k of Object.keys(doc)) delete doc[k];
-  Object.assign(doc, src);
+  App.edit.applyDoc(doc, next);
   // A mutation can delete a selected wall — via Delete, or via undo. Prune the selection
   // to what still exists, or the properties panel dereferences a wall that is gone.
   selection = {
@@ -1241,8 +1248,11 @@ const endDrag = e => {
   const orig = drag.orig;
   drag = null; dragSnap = null;
   if (!moved) return;
-  // one snapshot per drag, taken from where the drag began
-  replaceDoc(orig); commit(next);
+  // One snapshot per drag, taken from where the drag began. Push the ORIGINAL and install
+  // the final document — never `replaceDoc(orig)` first: `next` is frequently `doc` itself,
+  // and restoring orig into doc would rewrite `next` out from under the commit.
+  history.push(orig);
+  replaceDoc(next);
 };
 cv.addEventListener('pointerup', e => { wallPointerUp(e); endDrag(e); });
 cv.addEventListener('pointercancel', e => { wallPointerUp(e); endDrag(e); });
