@@ -1001,7 +1001,15 @@ function syncProps() {
   pNote.textContent = multi ? `${ws.length} walls selected — thickness and type apply to all` : '';
 }
 
-function commit(next) { history.push(doc); replaceDoc(next); }
+// A no-op mutation must not enter history. Several property handlers can reach this with an
+// empty selection — a field blurred by its own panel being hidden fires `change` after the
+// selection is gone — and a phantom undo entry is worse than a dropped edit: Cmd-Z appears
+// to do nothing at all.
+function commit(next) {
+  if (next === doc) return syncProps();
+  history.push(doc);
+  replaceDoc(next);
+}
 // Every document mutation goes through here: swap, prune the selection, recompile.
 // The recompile is not optional — world.runs and world.drawList hold live references
 // into the document, so skipping it leaves collision stale while rendering looks right.
@@ -1061,6 +1069,7 @@ toolWall.addEventListener('click', () => setTool('wall'));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 pT.addEventListener('change', () => {
+  if (!selection.walls.length) return syncProps();
   const v = clamp(parseFloat(pT.value), 0.02, 1);          // spec's guardrail
   if (!Number.isFinite(v)) return syncProps();
   let next = doc;
@@ -1072,6 +1081,7 @@ pT.addEventListener('change', () => {
 });
 
 pLen.addEventListener('change', () => {
+  if (!selection.walls.length) return syncProps();
   const v = parseFloat(pLen.value);
   if (!Number.isFinite(v) || v < 0.1) return syncProps();   // degenerate walls are refused
   commit(App.edit.setLength(doc, selection.walls[0], v, anchor));
@@ -1088,6 +1098,7 @@ pAng.addEventListener('change', () => {
 });
 
 pType.addEventListener('change', () => {
+  if (!selection.walls.length) return syncProps();
   let next = doc;
   for (const id of selection.walls) {
     next = JSON.parse(JSON.stringify(next));
