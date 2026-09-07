@@ -288,33 +288,44 @@ App.layout = (() => {
     if (doc.v !== VERSION) e.push(`schema version must be ${VERSION}`);
     if (!doc.plot || !fin(doc.plot.w) || !fin(doc.plot.h) || doc.plot.w <= 0 || doc.plot.h <= 0)
       e.push('plot must have finite positive w and h');
-    if (!doc.nodes || typeof doc.nodes !== 'object') e.push('nodes must be an object');
-    for (const [id, p] of Object.entries(doc.nodes || {}))
+    const nodesOk = !!doc.nodes && typeof doc.nodes === 'object' && !Array.isArray(doc.nodes);
+    if (!nodesOk) e.push('nodes must be an object');
+    for (const [id, p] of Object.entries(nodesOk ? doc.nodes : {}))
       if (!isPt(p)) e.push(`node ${id} must be a pair of finite numbers`);
     for (const k of ARRAYS) if (!Array.isArray(doc[k])) e.push(`${k} must be an array`);
 
-    for (const w of doc.walls || []) {
-      const p = (doc.nodes || {})[w.from], q = (doc.nodes || {})[w.to];
+    const isObj = x => x !== null && typeof x === 'object' && !Array.isArray(x);
+    const nodes = nodesOk ? doc.nodes : {};
+
+    if (Array.isArray(doc.walls)) doc.walls.forEach((w, i) => {
+      if (!isObj(w)) { e.push(`walls[${i}] must be an object`); return; }
+      const p = nodes[w.from], q = nodes[w.to];
       if (!p) e.push(`wall ${w.id} references unknown node ${w.from}`);
       if (!q) e.push(`wall ${w.id} references unknown node ${w.to}`);
       if (!fin(w.t) || w.t <= 0) e.push(`wall ${w.id} thickness must be finite and > 0`);
       if (p && q && Math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-6) e.push(`wall ${w.id} is zero-length`);
       if (typeof w.type !== 'string') e.push(`wall ${w.id} needs a type`);
-    }
-    for (const a of doc.areas || []) {
+    });
+    if (Array.isArray(doc.areas)) doc.areas.forEach((a, i) => {
+      if (!isObj(a)) { e.push(`areas[${i}] must be an object`); return; }
       if (!Array.isArray(a.poly) || a.poly.length < 3) e.push(`area ${a.id} needs at least 3 points`);
       else for (const p of a.poly) if (!isPt(p)) e.push(`area ${a.id} has a non-finite point`);
-    }
-    for (const it of doc.items || []) {
+    });
+    if (Array.isArray(doc.items)) doc.items.forEach((it, i) => {
+      if (!isObj(it)) { e.push(`items[${i}] must be an object`); return; }
       if (!isPt(it.at)) e.push(`item ${it.id} position must be finite`);
       if (!fin(it.a)) e.push(`item ${it.id} angle must be finite`);
-    }
-    for (const b of doc.bays || []) {
+    });
+    if (Array.isArray(doc.bays)) doc.bays.forEach((b, i) => {
+      if (!isObj(b)) { e.push(`bays[${i}] must be an object`); return; }
       if (!Array.isArray(b.rect) || b.rect.length !== 4 || !b.rect.every(fin))
         e.push(`bay ${b.id} rect must be four finite numbers`);
       else if (b.rect[2] <= 0 || b.rect[3] <= 0) e.push(`bay ${b.id} must have positive size`);
-    }
-    for (const d of doc.dims || []) if (!isPt(d.from) || !isPt(d.to)) e.push('a dim has non-finite ends');
+    });
+    if (Array.isArray(doc.dims)) doc.dims.forEach((d, i) => {
+      if (!isObj(d)) { e.push(`dims[${i}] must be an object`); return; }
+      if (!isPt(d.from) || !isPt(d.to)) e.push('a dim has non-finite ends');
+    });
     if (!doc.spawn || !isPt(doc.spawn.at) || !fin(doc.spawn.a)) e.push('spawn must be finite');
     if (!doc.brief || !Array.isArray(doc.brief.targets) || !Array.isArray(doc.brief.vehicles))
       e.push('brief needs targets and vehicles arrays');
@@ -329,7 +340,9 @@ App.layout = (() => {
     if (!json || typeof json !== 'object' || Array.isArray(json)) return { errors: ['document must be an object'] };
     if (typeof json.v === 'number' && json.v > VERSION) return { errors: [`document is newer (v${json.v}) than this client (v${VERSION})`] };
     const doc = migrate(pack(json));
-    const errors = validate(doc);
+    let errors;
+    try { errors = validate(doc); }
+    catch (err) { return { errors: ['document could not be validated: ' + String(err && err.message || err)] }; }
     return errors.length ? { errors } : { doc };
   }
 

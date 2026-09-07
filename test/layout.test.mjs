@@ -78,3 +78,38 @@ test('unknown top-level keys survive a round trip', () => {
   const back = layout.unpack(layout.pack(doc));
   assert.deepEqual(back.doc.futureThing, { hello: 1 });
 });
+
+for (const collection of ['walls', 'areas', 'items', 'bays', 'dims']) {
+  test(`validate returns errors (never throws) for ${collection}: [null]`, () => {
+    const doc = good(); doc[collection] = [null];
+    let errors;
+    assert.doesNotThrow(() => { errors = layout.validate(doc); });
+    assert.ok(Array.isArray(errors) && errors.length, JSON.stringify(errors));
+  });
+
+  test(`validate returns errors (never throws) when ${collection} is {} instead of an array`, () => {
+    const doc = good(); doc[collection] = {};
+    let errors;
+    assert.doesNotThrow(() => { errors = layout.validate(doc); });
+    assert.ok(Array.isArray(errors) && errors.length, JSON.stringify(errors));
+    assert.match(errors.join(), new RegExp(`${collection} must be an array`));
+  });
+}
+
+test('validate rejects nodes: [] with a "nodes must be an object" message', () => {
+  const doc = good(); doc.nodes = [];
+  const errors = layout.validate(doc);
+  assert.match(errors.join(), /nodes must be an object/);
+});
+
+test('unpack returns {errors} rather than throwing for {v:1, walls:{}}', () => {
+  let result;
+  assert.doesNotThrow(() => { result = layout.unpack({ v: 1, walls: {} }); });
+  assert.ok(result.errors && result.errors.length, JSON.stringify(result));
+});
+
+test('unpack returns {errors} rather than throwing for {v:1, nodes:[], walls:[null]}', () => {
+  let result;
+  assert.doesNotThrow(() => { result = layout.unpack({ v: 1, nodes: [], walls: [null] }); });
+  assert.ok(result.errors && result.errors.length, JSON.stringify(result));
+});
