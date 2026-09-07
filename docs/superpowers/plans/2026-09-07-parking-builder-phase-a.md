@@ -1024,6 +1024,7 @@ Directly after those, add:
 // between the two calls, because today's scene draws its carport roof and palms
 // over the cars but its floor and bay outlines under them.
 function paintList(from, to) {
+  g.save();                        // never leak lineWidth/strokeStyle/lineDash out of here
   for (const d of world.drawList) {
     if (d.z < from || d.z >= to) continue;
     if (d.kind === 'area' && d.layer.fill) drawArea(d.obj.poly, d.layer.fill);
@@ -1036,6 +1037,10 @@ function paintList(from, to) {
 ```
 
 - [ ] **Step 3: Replace the ground, street, path, apron, bays and dims in `draw()`**
+
+Also add `g.lineWidth = 1;` to the deck's plank block, immediately after its
+`g.strokeStyle = 'rgba(60,66,70,.35)';` line — it previously inherited that value from
+the street centre-line code this task deletes.
 
 In `draw()`, delete these existing lines: 611-614 (plot fill, street fill, centre-line loop), 621 (`rect(path…)`, `rect(apron…)`), 623-625 (the bays `save`/`strokeRect`/`restore` block), the `for (const o of staticObstacles)` loop at 628-631, and the five `drawDim(…)` calls at 652-656.
 
@@ -1081,7 +1086,16 @@ Then in `paintList`, paint bays and dims after the banded entries:
     g.restore();
   }
   if (DIM_Z >= from && DIM_Z < to) for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label);
+  g.restore();
 ```
+
+**Canvas state must not leak, and must not be inherited.** `drawRun` sets `lineWidth`
+to a wall thickness — tens of pixels — so without the `save`/`restore` pair above, the
+next thing to stroke inherits it. That is not hypothetical: the deck's plank lines
+relied on `lineWidth` being 1, which the deleted street centre-line code happened to
+leave behind, and the leak turned them into a solid `rgba(60,66,70,.35)` wash over the
+whole deck. So Task 6 must ALSO give the deck's plank loop an explicit `g.lineWidth = 1`,
+and every registry painter must set every stroke property it depends on.
 
 - [ ] **Step 5: Verify the render is unchanged**
 
