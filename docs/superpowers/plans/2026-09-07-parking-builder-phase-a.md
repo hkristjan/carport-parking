@@ -1056,7 +1056,7 @@ and immediately **after** the two `drawVehicle` lines (632-633), put:
 In the `registry` block, replace the `street` entry and add `bay`/`dim` handling by giving the layers `draw` functions. Because the registry block is DOM-free it cannot close over `g`, so painters take it as an argument:
 
 ```js
-    street:  { kind: 'area', solid: false, layers: [{ z: 5, fill: '#e9ebee', draw: (g, a, v) => {
+    street:  { kind: 'area', solid: false, layers: [{ z: 5, draw: (g, a, v) => {
       g.fillStyle = '#e9ebee'; g.beginPath();
       a.poly.forEach(([x, y], i) => i ? g.lineTo(v.px(x), v.px(y)) : g.moveTo(v.px(x), v.px(y)));
       g.closePath(); g.fill();
@@ -1066,6 +1066,10 @@ In the `registry` block, replace the `street` entry and add `bay`/`dim` handling
       for (let x = Math.min(...xs) + 0.5; x < x1; x += 1.2) { g.beginPath(); g.moveTo(v.px(x), v.px(mid)); g.lineTo(v.px(x + 0.6), v.px(mid)); g.stroke(); }
     } }] },
 ```
+
+A layer carries **either `fill` or `draw`, never both.** `paintList` tests `fill` first,
+so a layer with both would silently never run its `draw` — which is why `street` drops
+`fill` here and fills its own polygon inside `draw` before stroking the centre line.
 
 Then in `paintList`, paint bays and dims after the banded entries:
 
