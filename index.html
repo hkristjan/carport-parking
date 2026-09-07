@@ -225,9 +225,58 @@
   </svg>
 </div>
 
+<script data-ns="geom">
+globalThis.App = globalThis.App || {};
+App.geom = (() => {
+  'use strict';
+  function cornersOf(c, spec) {
+    const ca = Math.cos(c.a), sa = Math.sin(c.a), hl = spec.len / 2, hw = spec.wid / 2;
+    return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([px, py]) => [c.x + px * ca - py * sa, c.y + px * sa + py * ca]);
+  }
+  const rectCorners = r => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+  // SAT between two oriented boxes; returns minimum translation vector for A, or null
+  function collide(A, aA, B, aB) {
+    const axes = [[Math.cos(aA), Math.sin(aA)], [-Math.sin(aA), Math.cos(aA)], [Math.cos(aB), Math.sin(aB)], [-Math.sin(aB), Math.cos(aB)]];
+    let best = null;
+    for (const [ax, ay] of axes) {
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const [x, y] of A) { const p = x * ax + y * ay; a0 = Math.min(a0, p); a1 = Math.max(a1, p); }
+      for (const [x, y] of B) { const p = x * ax + y * ay; b0 = Math.min(b0, p); b1 = Math.max(b1, p); }
+      const overlap = Math.min(a1, b1) - Math.max(a0, b0);
+      if (overlap <= 0) return null;
+      if (!best || overlap < best.d) { const s = (a0 + a1) / 2 < (b0 + b1) / 2 ? -1 : 1; best = { d: overlap, nx: ax * s, ny: ay * s }; }
+    }
+    return best;
+  }
+  function pointInVehicle(x, y, v) {
+    const dx = x - v.x, dy = y - v.y, ca = Math.cos(v.a), sa = Math.sin(v.a);
+    const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
+    return Math.abs(lx) <= v.spec.len / 2 + 0.15 && Math.abs(ly) <= v.spec.wid / 2 + 0.15;
+  }
+  // A wall is its centreline p->q extruded t/2 either side: one oriented box.
+  function wallQuad(p, q, t) {
+    const a = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    const nx = -Math.sin(a) * t / 2, ny = Math.cos(a) * t / 2;
+    return { corners: [[p[0] + nx, p[1] + ny], [q[0] + nx, q[1] + ny], [q[0] - nx, q[1] - ny], [p[0] - nx, p[1] - ny]], a };
+  }
+  // Item footprint: a w x h box centred on (cx, cy), rotated by a.
+  function rectQuad(cx, cy, w, h, a = 0) {
+    const ca = Math.cos(a), sa = Math.sin(a), hw = w / 2, hh = h / 2;
+    return { corners: [[hw, hh], [hw, -hh], [-hw, -hh], [-hw, hh]].map(([x, y]) => [cx + x * ca - y * sa, cy + x * sa + y * ca]), a };
+  }
+  function bboxOf(corners) {
+    const xs = corners.map(c => c[0]), ys = corners.map(c => c[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  return { cornersOf, rectCorners, collide, pointInVehicle, wallQuad, rectQuad, bboxOf };
+})();
+</script>
+
 <script>
 (() => {
 'use strict';
+const { cornersOf, rectCorners, collide, pointInVehicle } = App.geom;
 // ---------- DOM
 const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
@@ -354,32 +403,6 @@ document.querySelectorAll('[data-k]').forEach(b => {
   const k = b.dataset.k, on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
 });
-
-// ---------- Geometry
-function cornersOf(c, spec) {
-  const ca = Math.cos(c.a), sa = Math.sin(c.a), hl = spec.len / 2, hw = spec.wid / 2;
-  return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([px, py]) => [c.x + px * ca - py * sa, c.y + px * sa + py * ca]);
-}
-const rectCorners = r => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
-// SAT between two oriented boxes; returns minimum translation vector for A, or null
-function collide(A, aA, B, aB) {
-  const axes = [[Math.cos(aA), Math.sin(aA)], [-Math.sin(aA), Math.cos(aA)], [Math.cos(aB), Math.sin(aB)], [-Math.sin(aB), Math.cos(aB)]];
-  let best = null;
-  for (const [ax, ay] of axes) {
-    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-    for (const [x, y] of A) { const p = x * ax + y * ay; a0 = Math.min(a0, p); a1 = Math.max(a1, p); }
-    for (const [x, y] of B) { const p = x * ax + y * ay; b0 = Math.min(b0, p); b1 = Math.max(b1, p); }
-    const overlap = Math.min(a1, b1) - Math.max(a0, b0);
-    if (overlap <= 0) return null;
-    if (!best || overlap < best.d) { const s = (a0 + a1) / 2 < (b0 + b1) / 2 ? -1 : 1; best = { d: overlap, nx: ax * s, ny: ay * s }; }
-  }
-  return best;
-}
-function pointInVehicle(x, y, v) {
-  const dx = x - v.x, dy = y - v.y, ca = Math.cos(v.a), sa = Math.sin(v.a);
-  const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
-  return Math.abs(lx) <= v.spec.len / 2 + 0.15 && Math.abs(ly) <= v.spec.wid / 2 + 0.15;
-}
 
 // ---------- Simulation (only the selected vehicle moves)
 function step(dt) {
