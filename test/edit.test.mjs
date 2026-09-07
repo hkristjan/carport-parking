@@ -368,3 +368,34 @@ test('applyDoc drops keys the incoming document does not have', () => {
   edit.applyDoc(live, layout.blank('t'));
   assert.equal('stray' in live, false);
 });
+
+// ---------- clampNodes: the single point where every way to move a node meets the plot
+const plotDoc = () => Object.assign(layout.blank('t'), {
+  plot: { w: 18.6, h: 15.6 },
+  nodes: { inside: [4, 4], far: [40, -3] },
+  walls: [{ id: 'w1', from: 'inside', to: 'far', t: 0.2, type: 'wall' }],
+});
+
+test('clampNodes pulls a node outside the plot onto the boundary', () => {
+  const out = edit.clampNodes(plotDoc());
+  assert.deepEqual(out.nodes.far, [18.6, 0]);
+});
+
+test('clampNodes leaves a node inside the plot untouched', () => {
+  const out = edit.clampNodes(plotDoc());
+  assert.deepEqual(out.nodes.inside, [4, 4]);
+});
+
+test('clampNodes turns a NaN coordinate into 0 rather than letting it through', () => {
+  const d = plotDoc();
+  d.nodes.bad = [NaN, 3];
+  const out = edit.clampNodes(d);
+  assert.deepEqual(out.nodes.bad, [0, 3]);
+});
+
+test('clampNodes does not mutate its input document', () => {
+  const d = plotDoc();
+  const before = JSON.stringify(d);
+  edit.clampNodes(d);
+  assert.equal(JSON.stringify(d), before);
+});

@@ -781,6 +781,15 @@ App.edit = (() => {
     isNaN(pt[1]) ? 0 : Math.min(doc.plot.h, Math.max(0, pt[1])),
   ];
 
+  // Every node, clamped into the plot. Applied at the single commit point rather than at each
+  // of the five ways to move a node — a length or angle edit, or a wall-body drag, reaches the
+  // document without ever passing through the snapper, where the per-point clamp lives.
+  function clampNodes(doc) {
+    const out = clone(doc);
+    for (const id of Object.keys(out.nodes)) out.nodes[id] = clampPt(out, out.nodes[id]);
+    return out;
+  }
+
   // Replace the contents of `live` in place with `next`, and return the previous contents
   // as a detached snapshot. `next` is sometimes `live` itself — a drag that ends without a
   // merge passes the live document — so the incoming keys are snapshotted BEFORE `live` is
@@ -820,7 +829,7 @@ App.edit = (() => {
 
   return {
     gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength,
-    snap, clampPt, applyDoc, chainToDoc,
+    snap, clampPt, clampNodes, applyDoc, chainToDoc,
   };
 })();
 </script>
@@ -1007,6 +1016,9 @@ function syncProps() {
 // to do nothing at all.
 function commit(next) {
   if (next === doc) return syncProps();
+  // Not in replaceDoc: that path also serves undo/redo and the live drag preview, and
+  // re-clamping history entries would make undo lossy.
+  next = App.edit.clampNodes(next);
   history.push(doc);
   replaceDoc(next);
 }
@@ -1286,6 +1298,9 @@ cv.addEventListener('pointermove', e => {
     let next = drag.orig;
     if (drag.kind === 'node') next = App.edit.moveNode(drag.orig, drag.id, s.pt);
     else {
+      // A wall dragged past the plot edge has its outside endpoint pulled to the boundary
+      // by the clamp in commit, which shortens the wall rather than translating it. That is
+      // deliberate: a visibly shortened wall beats a wall that has left the plot.
       const w = drag.orig.walls.find(x => x.id === drag.id);
       const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1];
       const p = drag.orig.nodes[w.from], q = drag.orig.nodes[w.to];
