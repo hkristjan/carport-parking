@@ -205,6 +205,33 @@ ny: 0}`. `step()` applies it, the vehicle is pushed to `NaN` coordinates and van
 from the plan, with a clean console and no error anywhere. That is why
 `App.layout.validate` checks every number, and why `unpack` is the only door in.
 
+## Editing the layout
+
+Every document mutation goes through `App.edit`, which is DOM-free and unit-tested:
+`addNode`, `addWall`, `moveNode`, `mergeNodes`, `splitWall`, `setLength` and
+`deleteWalls` take a document and return a NEW one — none mutates its input, which is
+what makes undo a plain snapshot stack. `gcNodes` is the same shape and is already
+called internally by `deleteWalls` and `mergeNodes`. `snap` and `history` round out the
+namespace but don't fit that mould: `snap` reads a document and returns a candidate
+point, and `history()` is a factory returning a push/undo/redo stack of snapshots.
+
+The main IIFE owns only pointer handling, the overlay and the properties panel.
+
+Three rules:
+
+- **`commit(next)` for anything the user should be able to undo; `replaceDoc(next)` for
+  live previews.** A drag calls `replaceDoc` on every pointermove and `commit` once on
+  release — otherwise one drag fills the undo stack with hundreds of entries.
+- **Never skip the recompile.** `replaceDoc` recompiles because `world.runs[].points`
+  and `world.drawList[].obj` are live references into the document while `world.solids`
+  are snapshots. Mutate without recompiling and the scene repaints correctly while
+  collision stays stale — it looks like a physics bug, not a missing recompile.
+- **`gcNodes` after anything that removes or repoints a wall.** Merging corners orphans
+  nodes on every join, and orphans accumulate invisibly.
+
+Snap radii are always `10 / view.scale` — ten screen pixels expressed in world units, so
+the feel does not change with zoom. `Alt` suspends snapping.
+
 ## Git
 
 Never `git push` without being asked. One logical change per commit.

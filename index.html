@@ -1006,6 +1006,7 @@ function replaceDoc(next) {
     nodes: selection.nodes.filter(id => doc.nodes[id]),
   };
   world = App.compile(doc);
+  ops = null;                        // stale ops would paint the previous document
   if (world.warnings.length) console.warn('layout warnings:', world.warnings);
   syncProps();
 }
@@ -1465,25 +1466,33 @@ function drawItemFill(d) {
 // compete for the same paint order, so they must be merged and sorted: painting them as
 // separate groups honours z only WITHIN each group, which silently inverts pairs such as
 // the fence (a run at z 40) against the fence posts (an item at z 41).
-function paintList(from, to) {
+// The queue only changes when `world` does, so it is built once per compile instead of
+// twice per frame — dragging recompiles on every pointermove, so this is not academic.
+// The closures below capture `world` through this outer scope: every site that reassigns
+// `world` must set `ops = null` too, or paintList keeps painting the previous document.
+let ops = null;
+function buildOps() {
   const { BAY_Z, DIM_Z } = App.registry;
-  const ops = [];
+  const out = [];
   for (const d of world.drawList) {
-    if (d.kind === 'area' && d.layer.fill) ops.push([d.z, () => drawArea(d.obj.poly, d.layer.fill)]);
-    else if (d.layer.draw) ops.push([d.z, () => d.layer.draw(g, d.obj, { px })]);
+    if (d.kind === 'area' && d.layer.fill) out.push([d.z, () => drawArea(d.obj.poly, d.layer.fill)]);
+    else if (d.layer.draw) out.push([d.z, () => d.layer.draw(g, d.obj, { px })]);
     // An item layer with only a `fill` paints its footprint. Same rectQuad the compiler
     // uses for the solid, so a `{ type: 'bollard', footprint: { r: 0.12 }, fill }` entry
     // is drawn exactly where it blocks — it used to match no branch and paint nothing.
-    else if (d.kind === 'item' && d.layer.fill) ops.push([d.z, () => drawItemFill(d)]);
+    else if (d.kind === 'item' && d.layer.fill) out.push([d.z, () => drawItemFill(d)]);
   }
-  for (const run of world.runs) ops.push([run.z, () => drawRun(run, run.stroke)]);
-  ops.push([BAY_Z, () => {
+  for (const run of world.runs) out.push([run.z, () => drawRun(run, run.stroke)]);
+  out.push([BAY_Z, () => {
     g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
     for (const b of world.bays) g.strokeRect(px(b.rect[0]), px(b.rect[1]), px(b.rect[2]), px(b.rect[3]));
     g.restore();
   }]);
-  ops.push([DIM_Z, () => { for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label); }]);
-  ops.sort((a, b) => a[0] - b[0]);          // stable: same-z walls keep document order
+  out.push([DIM_Z, () => { for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label); }]);
+  return out.sort((a, b) => a[0] - b[0]);   // stable: same-z walls keep document order
+}
+function paintList(from, to) {
+  if (!ops) ops = buildOps();
   g.save();                                 // never leak lineWidth/strokeStyle/lineDash out
   for (const [z, fn] of ops) if (z >= from && z < to) fn();
   g.restore();
