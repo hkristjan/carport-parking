@@ -442,6 +442,90 @@ App.defaults = (() => {
 })();
 </script>
 
+<script data-ns="compile">
+globalThis.App = globalThis.App || {};
+App.compile = (() => {
+  'use strict';
+  const { wallQuad, rectQuad } = App.geom;
+  const reg = App.registry;
+
+  // Walls that share a degree-2 node, thickness and type form one stroked run, so
+  // canvas does the corner mitring. Collision does not care: overlapping quads union.
+  function buildRuns(doc, walls) {
+    const deg = {};
+    for (const w of walls) { deg[w.from] = (deg[w.from] || 0) + 1; deg[w.to] = (deg[w.to] || 0) + 1; }
+    const key = w => `${w.type}|${w.t}`;
+    const left = new Set(walls.map(w => w.id));
+    const byId = new Map(walls.map(w => [w.id, w]));
+    const at = {};
+    for (const w of walls) { (at[w.from] ||= []).push(w); (at[w.to] ||= []).push(w); }
+
+    const runs = [];
+    for (const seed of walls) {
+      if (!left.has(seed.id)) continue;
+      left.delete(seed.id);
+      let pts = [seed.from, seed.to];
+      // extend from both ends while the joint is a clean degree-2 pass-through
+      for (let end = 0; end < 2; end++) {
+        for (;;) {
+          const tip = end === 0 ? pts[0] : pts[pts.length - 1];
+          if (deg[tip] !== 2) break;
+          const next = (at[tip] || []).find(w => left.has(w.id) && key(w) === key(seed));
+          if (!next) break;
+          left.delete(next.id);
+          const far = next.from === tip ? next.to : next.from;
+          if (end === 0) pts.unshift(far); else pts.push(far);
+        }
+      }
+      const layer = reg.get(seed.type).layers[0];
+      runs.push({ type: seed.type, t: seed.t, z: layer.z, stroke: layer.stroke, points: pts.map(id => doc.nodes[id]) });
+    }
+    return runs;
+  }
+
+  return function compile(doc) {
+    const warnings = [], solids = [], drawList = [];
+    const push = (obj, kind, type) => {
+      const t = reg.get(type);
+      if (!t) { warnings.push(`unknown type ${type}, skipped`); return null; }
+      if (t.kind !== kind) { warnings.push(`type ${type} is ${t.kind}, used as ${kind}`); return null; }
+      t.layers.forEach(layer => drawList.push({ z: layer.z, type, kind, obj, layer }));
+      return t;
+    };
+
+    const walls = [];
+    for (const w of doc.walls) {
+      const t = push(w, 'wall', w.type);
+      if (!t) continue;
+      walls.push(w);
+      if (t.solid) solids.push(wallQuad(doc.nodes[w.from], doc.nodes[w.to], w.t));
+    }
+    for (const a of doc.areas) push(a, 'area', a.type);
+    for (const it of doc.items) {
+      const t = push(it, 'item', it.type);
+      if (!t || !t.solid || !t.footprint) continue;
+      const f = t.footprint;
+      const w = f.w != null ? f.w : f.r * 2, h = f.h != null ? f.h : f.r * 2;
+      solids.push(rectQuad(it.at[0], it.at[1], w, h, it.a));
+    }
+
+    const { w: W, h: H } = doc.plot;
+    return {
+      extent: { w: W, h: H },
+      solids,
+      bounds: [
+        { x: -1, y: -1, w: W + 2, h: 1 }, { x: -1, y: H, w: W + 2, h: 1 },
+        { x: -1, y: -1, w: 1, h: H + 2 }, { x: W, y: -1, w: 1, h: H + 2 },
+      ],
+      runs: buildRuns(doc, walls),
+      drawList: drawList.sort((a, b) => a.z - b.z),
+      bays: doc.bays, dims: doc.dims, spawn: doc.spawn, brief: doc.brief,
+      warnings,
+    };
+  };
+})();
+</script>
+
 <script>
 (() => {
 'use strict';
