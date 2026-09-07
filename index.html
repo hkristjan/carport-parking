@@ -661,6 +661,14 @@ App.edit = (() => {
     const out = clone(doc);
     for (const w of out.walls) { if (w.from === dropId) w.from = keepId; if (w.to === dropId) w.to = keepId; }
     out.walls = out.walls.filter(w => w.from !== w.to);
+    // A merge can also leave two walls spanning the SAME pair of nodes. They stroke as a
+    // folded run and emit overlapping solids, so keep the first and drop the rest.
+    const seen = new Set();
+    out.walls = out.walls.filter(w => {
+      const key = w.from < w.to ? w.from + '|' + w.to : w.to + '|' + w.from;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
     return gcNodes(out);
   }
 
@@ -678,7 +686,9 @@ App.edit = (() => {
   // and the far end slides along the wall's current direction.
   function setLength(doc, wallId, metres, anchor) {
     const w = doc.walls.find(x => x.id === wallId);
-    if (!w || !(metres > 0)) return clone(doc);
+    // Infinity passes `> 0`, and one non-finite coordinate is enough to make the
+    // vehicle teleport away — guard finiteness explicitly, never by comparison alone.
+    if (!w || !Number.isFinite(metres) || metres <= 0) return clone(doc);
     const keepId = anchor === 'to' ? w.to : w.from, moveId = anchor === 'to' ? w.from : w.to;
     const p = doc.nodes[keepId], q = doc.nodes[moveId];
     const len = Math.hypot(q[0] - p[0], q[1] - p[1]);

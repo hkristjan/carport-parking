@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadApp } from './extract.mjs';
 
-const { edit, layout, geom } = loadApp();
+const { edit, layout, geom, compile } = loadApp();
 
 const doc = () => Object.assign(layout.blank('t'), {
   nodes: { a: [0, 0], b: [5, 0], c: [5, 5], orphan: [9, 9] },
@@ -121,7 +121,9 @@ test('moveNode moves the shared node, so both walls follow', () => {
 test('mergeNodes repoints walls onto the kept node and drops the other', () => {
   const out = edit.mergeNodes(doc(), 'a', 'c');
   assert.equal(out.nodes.c, undefined);
-  assert.deepEqual(out.walls.map(w => [w.from, w.to]), [['a', 'b'], ['b', 'a']]);
+  // w2 (b->c) is repointed to b->a, which is the same segment as w1 (a->b) once c is
+  // gone — that duplicate is now collapsed too (Fix round 1), so only w1 survives.
+  assert.deepEqual(out.walls.map(w => [w.from, w.to]), [['a', 'b']]);
 });
 
 test('mergeNodes drops a wall left with both ends identical', () => {
@@ -174,4 +176,32 @@ test('every mutation leaves a document that still validates', () => {
   d = edit.splitWall(d, 'w2', [5, 2]).doc;
   d = edit.mergeNodes(d, 'a', 'c');
   assert.deepEqual(layout.validate(edit.gcNodes(d)), []);
+});
+
+test('setLength rejects Infinity, -Infinity, NaN, zero and negative lengths, leaving the document unchanged', () => {
+  const d = doc();
+  const before = JSON.stringify(d);
+  for (const bad of [Infinity, -Infinity, NaN, 0, -3]) {
+    const out = edit.setLength(d, 'w1', bad, 'from');
+    assert.deepEqual(out, JSON.parse(before), `setLength with ${bad} must return the document unchanged`);
+    assert.deepEqual(layout.validate(out), [], `document after rejecting ${bad} must still validate`);
+  }
+  assert.equal(JSON.stringify(d), before, 'input document itself must not be mutated');
+});
+
+test('mergeNodes collapses two walls that end up spanning the same node pair', () => {
+  const d = Object.assign(layout.blank('t'), {
+    nodes: { p1: [0, 0], p2: [5, 0], p3: [0, 4], p4: [5, 4] },
+    walls: [
+      { id: 'wA', from: 'p1', to: 'p2', t: 0.2, type: 'wall' },
+      { id: 'wB', from: 'p3', to: 'p4', t: 0.2, type: 'wall' },
+    ],
+  });
+  let out = edit.mergeNodes(d, 'p1', 'p3');
+  out = edit.mergeNodes(out, 'p2', 'p4');
+  assert.equal(out.walls.length, 1, 'the duplicate wall must be dropped');
+
+  const c = compile(out);
+  assert.equal(c.runs.length, 1, 'the surviving wall must compile to a single run');
+  assert.equal(c.solids.length, 1, 'the surviving wall must compile to a single solid');
 });
