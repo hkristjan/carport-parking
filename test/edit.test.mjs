@@ -329,3 +329,20 @@ test('chainToDoc does not mutate its input document', () => {
   edit.chainToDoc(d, [[10, 10], [12, 10]], [{ kind: 'free' }, { kind: 'free' }]);
   assert.equal(JSON.stringify(d), before);
 });
+
+test('replaceDoc-style in-place swap survives next === doc aliasing', () => {
+  const doc = { a: 1, nodes: { n1: [0, 0] }, walls: [] };
+  const next = doc;                                   // exactly what endDrag passes
+  const src = Object.assign({}, next);                // the fix: snapshot first
+  for (const k of Object.keys(doc)) delete doc[k];
+  Object.assign(doc, src);
+  assert.deepEqual(doc, { a: 1, nodes: { n1: [0, 0] }, walls: [] });
+});
+
+test('the unsafe order empties the document when next === doc', () => {
+  const doc = { a: 1, nodes: { n1: [0, 0] } };
+  const next = doc;
+  for (const k of Object.keys(doc)) delete doc[k];
+  Object.assign(doc, next);                           // copies nothing
+  assert.deepEqual(doc, {});
+});
