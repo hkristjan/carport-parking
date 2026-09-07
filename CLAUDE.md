@@ -65,7 +65,7 @@ differ by 4 m.
 
 ## Verifying a change
 
-There are no tests. Before committing:
+`node --test test/*.test.mjs` (see below), then extract and syntax-check the main script:
 
 ```bash
 python3 -c "import re;s=open('index.html').read();open('/tmp/s.js','w').write(re.search(r'<script>(.*?)</script>',s,re.S).group(1))" && node --check /tmp/s.js
@@ -134,6 +134,28 @@ DOM-free namespaces live in `<script data-ns="…">` blocks, in dependency order
 `window`: the test harness runs them in a bare `vm` context, and touching the DOM
 there throws. Everything else stays in the final `<script>` main IIFE.
 
+Two contracts the compiled world imposes on its callers:
+
+- **`App.compile` requires an already-validated document.** It validates nothing itself.
+  Every invariant it relies on — referenced nodes exist, no zero-length wall, `t > 0`,
+  polygons of at least 3 points, finite coordinates — lives in `App.layout.validate`.
+  Handed raw input, `compile` throws or quietly produces garbage geometry. Always
+  `App.layout.unpack(json)` first and compile only `unpack`'s `doc`.
+- **The compiled world deliberately half-aliases the document, so mutating the document
+  means recompiling.** `solids` are snapshotted corner arrays, but `runs[].points` are
+  the document's own node arrays and every `drawList[].obj` is the live wall, area or
+  item object. So after any edit to the document you MUST `world = App.compile(doc)`:
+  otherwise the scene repaints correctly from the live objects while collision stays
+  frozen at the old geometry, and the vehicle is blocked by an invisible ghost where the
+  wall used to be while driving straight through the wall you can see. It presents as a
+  physics bug, not as a missing recompile — that is what makes it expensive.
+
+`item.at` is **always the item's centre**, for every type: painters draw outward from it
+and `compile` builds the footprint quad around it. A solid item's dimensions live once,
+in its `footprint`; a non-solid one's in a `size` field. Never re-declare them inside a
+painter — the copies drift, and a footprint smaller than the drawing lets the car park
+inside the visible object with nothing to catch it.
+
 Adding a scene type is a `registry.types` entry — `kind`, `solid`, optional
 `footprint`, and `layers` of `{z, draw}`. Nothing else changes. `layers` is plural
 because the carport paints its floor under the vehicles and its roof over them;
@@ -141,8 +163,14 @@ vehicles paint at `registry.VEHICLE_Z` (50).
 
 Four rules the rendering path depends on. Each of these was learned by breaking it:
 
-- **A layer carries either `fill` or `draw`, never both.** `paintList` tests `fill`
-  first, so a layer with both silently never runs its `draw`.
+- **For an *area* layer, `fill` and `draw` are exclusive.** `paintList` tests
+  `d.kind === 'area' && d.layer.fill` first, so an area layer carrying both silently
+  never runs its `draw`. For an *item* layer it is the other way round: `draw` is tested
+  first, so an item layer carrying both runs its `draw` and ignores its `fill`. An item
+  layer with only a `fill` paints the type's `footprint` quad, centred on `item.at` —
+  the same quad `App.compile` makes the solid from, so paint and collision agree. A
+  layer with none of `fill`, `draw` or `stroke` (walls paint from `stroke`) is
+  unpaintable, and `App.compile` now says so in `warnings` rather than dropping it.
 - **Every painter sets every stroke and fill property it uses, and inherits none.**
   `drawRun` leaves `lineWidth` at a wall thickness — tens of pixels. The deck's plank
   lines once inherited it and became a solid wash over the whole deck.
@@ -167,9 +195,15 @@ They cover `geom`, `layout` and `compile` only. Rendering and interaction stay
 eyeball-verified: extract, `node --check`, then open the page and drive it.
 
 Two `file://` traps: `fetch()` and ES modules are both CORS-blocked, so the default
-layout is an inline literal and namespaces are classic script blocks. And validate
-every coordinate as finite on load — a single `NaN` makes SAT silently report *no
-collision*, so bad data turns collisions off rather than crashing.
+layout is an inline literal and namespaces are classic script blocks.
+
+And assert every coordinate finite on load. A `NaN` coordinate does not miss cleanly
+and it does not throw: every axis projection in `collide` goes `NaN`, so both the
+`overlap <= 0` early-out and the `overlap < best.d` comparison are always false (every
+comparison against `NaN` is), and it returns a bogus collision — `{d: NaN, nx: 1,
+ny: 0}`. `step()` applies it, the vehicle is pushed to `NaN` coordinates and vanishes
+from the plan, with a clean console and no error anywhere. That is why
+`App.layout.validate` checks every number, and why `unpack` is the only door in.
 
 ## Git
 

@@ -113,3 +113,23 @@ test('unpack returns {errors} rather than throwing for {v:1, nodes:[], walls:[nu
   assert.doesNotThrow(() => { result = layout.unpack({ v: 1, nodes: [], walls: [null] }); });
   assert.ok(result.errors && result.errors.length, JSON.stringify(result));
 });
+
+// The painters loop `x < x0 + span`, so a non-finite span never terminates and hangs the
+// tab on the first frame. unpack is the hostile-input gate: it has to catch that here.
+test('an item span that is not finite and positive is rejected', () => {
+  for (const span of [Infinity, NaN, 0, -3, '5']) {
+    const d = good();
+    d.items = [{ id: 'it1', type: 'fenceposts', at: [0, 0], a: 0, span }];
+    assert.match(layout.validate(d).join(), /it1 span must be finite and > 0/, String(span));
+  }
+});
+
+test('a finite positive span, w and h still validate, and absent ones are not required', () => {
+  const d = good();
+  d.items = [
+    { id: 'it1', type: 'fenceposts', at: [0, 0], a: 0, span: 18.6 },
+    { id: 'it2', type: 'walltrim', at: [1, 1], a: 0, w: 0.06, h: 11.35 },
+    { id: 'it3', type: 'palm', at: [2, 2], a: 0 },
+  ];
+  assert.deepEqual(layout.validate(d), []);
+});

@@ -280,6 +280,12 @@ App.registry = (() => {
   // Vehicles paint in the middle of the scene, not on top: the carport floor and bay
   // outlines go under them, the slatted roof, palms and dimension lines over them.
   const VEHICLE_Z = 50, BAY_Z = 35, DIM_Z = 80;
+  // `item.at` is ALWAYS the item's centre — for every type, without exception. Painters
+  // draw outward from it and App.compile builds footprint quads around it, so the two
+  // agree by construction. An item that treated `at` as a corner or a run's end would
+  // offset its collision box from its drawing by half the object the moment it gained a
+  // `footprint`. Dimensions live in ONE place too: a solid item's in its `footprint`, a
+  // non-solid one's in a `size` field. Never re-declare them inside a painter.
   const types = {
     ground:  { kind: 'area', solid: false, layers: [{ z: 0,  fill: '#f8f9fa' }] },
     street:  { kind: 'area', solid: false, layers: [{ z: 5, draw: (g, a, v) => {
@@ -292,20 +298,24 @@ App.registry = (() => {
       for (let x = Math.min(...xs) + 0.5; x < x1; x += 1.2) { g.beginPath(); g.moveTo(v.px(x), v.px(mid)); g.lineTo(v.px(x + 0.6), v.px(mid)); g.stroke(); }
     } }] },
     deck: { kind: 'item', solid: true, footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20, draw: (g, it, v) => {
-      const w = 10.47, h = 1.76, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+      const { w, h } = types.deck.footprint;   // read lazily: one source of truth for collision AND paint
+      const x = it.at[0] - w / 2, y = it.at[1] - h / 2;
       g.fillStyle = '#aeb3b8'; g.fillRect(v.px(x), v.px(y), v.px(w), v.px(h));
       g.strokeStyle = 'rgba(60,66,70,.35)'; g.lineWidth = 1;
       for (let ly = y + 0.16; ly < y + h; ly += 0.16) { g.beginPath(); g.moveTo(v.px(x), v.px(ly)); g.lineTo(v.px(x + w), v.px(ly)); g.stroke(); }
     } }] },
     path:    { kind: 'area', solid: false, layers: [{ z: 25, fill: '#bfc4ca' }] },
     apron:   { kind: 'area', solid: false, layers: [{ z: 26, fill: '#c9cdd3' }] },
-    carport: { kind: 'item', solid: false, layers: [
+    // Non-solid, so no `footprint`: its extent lives in `size`, which both layers read.
+    carport: { kind: 'item', solid: false, size: { w: 7.95, h: 6.08 }, layers: [
       { z: 30, draw: (g, it, v) => {                      // floor, under the cars
-        const w = 7.95, h = 6.08, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+        const { w, h } = types.carport.size;
+        const x = it.at[0] - w / 2, y = it.at[1] - h / 2;
         g.fillStyle = '#e6e8eb'; g.fillRect(v.px(x), v.px(y + 0.42), v.px(w), v.px(h - 0.42));
       } },
       { z: 60, draw: (g, it, v) => {                      // slats and shadow, over them
-        const w = 7.95, h = 6.08, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+        const { w, h } = types.carport.size;
+        const x = it.at[0] - w / 2, y = it.at[1] - h / 2;
         g.save(); g.beginPath(); g.rect(v.px(x), v.px(y + 0.42), v.px(w), v.px(h - 0.9)); g.clip();
         g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, v.px(0.045));
         for (let sx = x + 0.1; sx < x + w; sx += 0.1) { g.beginPath(); g.moveTo(v.px(sx), v.px(y)); g.lineTo(v.px(sx), v.px(y + h)); g.stroke(); }
@@ -324,14 +334,19 @@ App.registry = (() => {
       for (let i = 0; i < 9; i++) { const a = i * Math.PI * 2 / 9 + 0.3; g.beginPath(); g.moveTo(v.px(x), v.px(y)); g.quadraticCurveTo(v.px(x + Math.cos(a) * 0.5), v.px(y + Math.sin(a) * 0.5 - 0.1), v.px(x + Math.cos(a) * 1.05), v.px(y + Math.sin(a) * 1.05)); g.stroke(); }
       g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(v.px(x), v.px(y), v.px(0.16), 0, Math.PI * 2); g.fill();
     } }] },
-    fenceposts: { kind: 'item', solid: false, layers: [{ z: 41, draw: (g, it, v) => {
-      const [x0, y] = it.at, span = it.span || 18.6;
+    // A row of posts every `step` metres along a run of `span` metres centred on `at`. The
+    // first post sits on the run's left end, so it is derived from the centre, never stored.
+    fenceposts: { kind: 'item', solid: false, size: { w: 0.16, h: 0.32 }, step: 2.0, layers: [{ z: 41, draw: (g, it, v) => {
+      const { w, h } = types.fenceposts.size, step = types.fenceposts.step;
+      const span = it.span ?? 18.6;
+      const x0 = it.at[0] - span / 2, top = it.at[1] - h / 2;
       g.fillStyle = '#2c3335';
-      for (let x = x0; x < x0 + span; x += 2.0) g.fillRect(v.px(x) - v.px(0.08), v.px(y), v.px(0.16), v.px(0.32));
+      for (let x = x0; x < x0 + span; x += step) g.fillRect(v.px(x) - v.px(w / 2), v.px(top), v.px(w), v.px(h));
     } }] },
     walltrim: { kind: 'item', solid: false, layers: [{ z: 41, draw: (g, it, v) => {
+      const w = it.w ?? 0.06, h = it.h ?? 11.35;
       g.fillStyle = '#8a8f95';
-      g.fillRect(v.px(it.at[0]), v.px(it.at[1]), v.px(it.w || 0.06), v.px(it.h || 11.35));
+      g.fillRect(v.px(it.at[0] - w / 2), v.px(it.at[1] - h / 2), v.px(w), v.px(h));
     } }] },
   };
   return { VEHICLE_Z, BAY_Z, DIM_Z, types, get: t => types[t] || null };
@@ -344,6 +359,7 @@ App.layout = (() => {
   'use strict';
   const VERSION = 1;
   const ARRAYS = ['walls', 'areas', 'items', 'bays', 'dims'];
+  const ITEM_NUM = ['span', 'w', 'h'];   // optional item extras; finite and positive if present
   const fin = n => typeof n === 'number' && Number.isFinite(n);
   const isPt = p => Array.isArray(p) && p.length === 2 && fin(p[0]) && fin(p[1]);
 
@@ -380,6 +396,11 @@ App.layout = (() => {
       if (!isObj(it)) { e.push(`items[${i}] must be an object`); return; }
       if (!isPt(it.at)) e.push(`item ${it.id} position must be finite`);
       if (!fin(it.a)) e.push(`item ${it.id} angle must be finite`);
+      // Optional numeric extras. Most types have none, so they are not required — but a
+      // present one must be sane: a painter that loops `x < x0 + span` never terminates on
+      // span Infinity, and hangs the tab on the first frame.
+      for (const k of ITEM_NUM) if (k in it && (!fin(it[k]) || it[k] <= 0))
+        e.push(`item ${it.id} ${k} must be finite and > 0`);
     });
     if (Array.isArray(doc.bays)) doc.bays.forEach((b, i) => {
       if (!isObj(b)) { e.push(`bays[${i}] must be an object`); return; }
@@ -462,8 +483,10 @@ App.defaults = (() => {
       { id: 'it2', type: 'carport', at: [6.525, 6.61],  a: 0 },
       { id: 'it3', type: 'palm',    at: [13.1, 1.4],    a: 0 },
       { id: 'it4', type: 'palm',    at: [16.7, 1.4],    a: 0 },
-      { id: 'it5', type: 'fenceposts', at: [0.4, 15.22], a: 0, span: 18.6 },
-      { id: 'it6', type: 'walltrim',   at: [2.25, 0],    a: 0, w: 0.06, h: 11.35 },
+      // `at` is the centre for every item type: the fence-post run's centre and the
+      // wall trim's centre, not their left end and top-left corner.
+      { id: 'it5', type: 'fenceposts', at: [9.7, 15.38],  a: 0, span: 18.6 },
+      { id: 'it6', type: 'walltrim',   at: [2.28, 5.675], a: 0, w: 0.06, h: 11.35 },
     ],
     bays: [
       { id: 'bay1', rect: [2.70, 4.05, 2.55, 5.55], a: 0, label: 'Bay 1' },
@@ -498,7 +521,6 @@ App.compile = (() => {
     for (const w of walls) { deg[w.from] = (deg[w.from] || 0) + 1; deg[w.to] = (deg[w.to] || 0) + 1; }
     const key = w => `${w.type}|${w.t}`;
     const left = new Set(walls.map(w => w.id));
-    const byId = new Map(walls.map(w => [w.id, w]));
     const at = {};
     for (const w of walls) { (at[w.from] ||= []).push(w); (at[w.to] ||= []).push(w); }
 
@@ -531,7 +553,13 @@ App.compile = (() => {
       const t = reg.get(type);
       if (!t) { warnings.push(`unknown type ${type}, skipped`); return null; }
       if (t.kind !== kind) { warnings.push(`type ${type} is ${t.kind}, used as ${kind}`); return null; }
-      t.layers.forEach(layer => drawList.push({ z: layer.z, type, kind, obj, layer }));
+      t.layers.forEach((layer, i) => {
+        // A layer paints via `fill` (areas and items), `draw` (anything) or `stroke` (wall
+        // runs). One with none of those is unpaintable: warn instead of dropping it silently.
+        if (layer.fill == null && layer.draw == null && layer.stroke == null)
+          warnings.push(`type ${type} layer ${i} carries neither fill nor draw, nothing painted`);
+        drawList.push({ z: layer.z, type, kind, obj, layer });
+      });
       return t;
     };
 
@@ -919,6 +947,17 @@ function drawRun(run, stroke) {
   run.points.forEach(([x, y], i) => i ? g.lineTo(px(x), px(y)) : g.moveTo(px(x), px(y)));
   g.stroke();
 }
+// An item's footprint quad, filled. Derived from the registry footprint the way
+// App.compile derives the collision quad, so paint and collision cannot drift apart.
+function drawItemFill(d) {
+  const f = App.registry.get(d.type).footprint;
+  if (!f) return;
+  const w = f.w != null ? f.w : f.r * 2, h = f.h != null ? f.h : f.r * 2;
+  const { corners } = App.geom.rectQuad(d.obj.at[0], d.obj.at[1], w, h, d.obj.a || 0);
+  g.fillStyle = d.layer.fill; g.beginPath();
+  corners.forEach(([x, y], i) => i ? g.lineTo(px(x), px(y)) : g.moveTo(px(x), px(y)));
+  g.closePath(); g.fill();
+}
 // One z-ordered queue. drawList entries, wall runs, bay outlines and dimension lines all
 // compete for the same paint order, so they must be merged and sorted: painting them as
 // separate groups honours z only WITHIN each group, which silently inverts pairs such as
@@ -929,6 +968,10 @@ function paintList(from, to) {
   for (const d of world.drawList) {
     if (d.kind === 'area' && d.layer.fill) ops.push([d.z, () => drawArea(d.obj.poly, d.layer.fill)]);
     else if (d.layer.draw) ops.push([d.z, () => d.layer.draw(g, d.obj, { px })]);
+    // An item layer with only a `fill` paints its footprint. Same rectQuad the compiler
+    // uses for the solid, so a `{ type: 'bollard', footprint: { r: 0.12 }, fill }` entry
+    // is drawn exactly where it blocks — it used to match no branch and paint nothing.
+    else if (d.kind === 'item' && d.layer.fill) ops.push([d.z, () => drawItemFill(d)]);
   }
   for (const run of world.runs) ops.push([run.z, () => drawRun(run, run.stroke)]);
   ops.push([BAY_Z, () => {

@@ -48,7 +48,7 @@ test('collide reports overlap for intersecting boxes and null otherwise', () => 
   assert.equal(geom.collide(a, 0, geom.rectCorners({ x: 2, y: 0, w: 2, h: 2 }), 0), null);
 });
 
-test('a NaN coordinate makes collide silently miss — hence validation on load', () => {
+test('a NaN coordinate yields a bogus MTV with d = NaN — hence validation on load', () => {
   // With every corner NaN, every axis projection is NaN, so both the "overlap <= 0"
   // early-out and the "overlap < best.d" comparison are always false (any comparison
   // against NaN is false) — collide never returns null, it returns a bogus MTV whose
@@ -58,4 +58,16 @@ test('a NaN coordinate makes collide silently miss — hence validation on load'
   const bad = [[NaN, NaN], [NaN, NaN], [NaN, NaN], [NaN, NaN]];
   const hit = geom.collide(a, 0, bad, 0);
   assert.ok(hit && Number.isNaN(hit.d));
+});
+
+// Only the direction of the minimum translation vector pushes the vehicle back out.
+// `collide`'s sign term decides it, and nothing else in the suite reads nx/ny: flipping
+// that sign would leave every other test green while every collision shoved the vehicle
+// deeper into the obstacle.
+test('the MTV points away from the other box', () => {
+  const a = geom.rectCorners({ x: 0, y: 0, w: 2, h: 2 });
+  const right = geom.collide(a, 0, geom.rectCorners({ x: 1, y: 0, w: 2, h: 2 }), 0);
+  assert.deepEqual([round(right.d), round(right.nx), round(right.ny)], [1, -1, 0]);
+  const left = geom.collide(a, 0, geom.rectCorners({ x: -1, y: 0, w: 2, h: 2 }), 0);
+  assert.deepEqual([round(left.d), round(left.nx), round(left.ny)], [1, 1, 0]);
 });

@@ -81,3 +81,11 @@ test('a larger plot compiles to a larger extent and matching bounds', () => {
   assert.deepEqual(c.extent, { w: 40, h: 30 });
   assert.deepEqual(c.bounds[1], { x: -1, y: 30, w: 42, h: 1 });
 });
+
+test('a layer with neither fill nor draw warns rather than dropping silently', () => {
+  registry.types.mutetest = { kind: 'item', solid: false, layers: [{ z: 12 }] };
+  try {
+    const c = compile(doc({ items: [{ id: 'it1', type: 'mutetest', at: [1, 1], a: 0 }] }));
+    assert.match(c.warnings.join(), /mutetest layer 0/);
+  } finally { delete registry.types.mutetest; }
+});
