@@ -262,7 +262,14 @@ test('clampPt holds a point inside the plot', () => {
   assert.deepEqual(edit.clampPt(d, [5, 5]), [5, 5], 'an interior point is untouched');
 });
 
-test('snap never returns a non-finite point', () => {
-  for (const p of [[0, 0], [5, 0], [3.42, 7.61], [1e6, -1e6]])
-    assert.ok(edit.snap(snapDoc(), p, { radius: 0.2, from: [0, 0] }).pt.every(Number.isFinite));
+test('snap never returns a non-finite point, including for non-finite input', () => {
+  const bad = [[NaN, 0], [Infinity, 0], [0, NaN], [-Infinity, -Infinity]];
+  for (const p of [[0, 0], [5, 0], [3.42, 7.61], [1e6, -1e6], ...bad])
+    assert.ok(edit.snap(snapDoc(), p, { radius: 0.2, from: [0, 0] }).pt.every(Number.isFinite),
+      `snap returned a non-finite point for ${JSON.stringify(p)}`);
+});
+
+test('clampPt replaces a non-finite component rather than propagating it', () => {
+  assert.deepEqual(edit.clampPt(snapDoc(), [NaN, 5]), [0, 5]);
+  assert.deepEqual(edit.clampPt(snapDoc(), [Infinity, 3]), [20, 3]);
 });

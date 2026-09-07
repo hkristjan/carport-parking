@@ -601,6 +601,7 @@ globalThis.App = globalThis.App || {};
 App.edit = (() => {
   'use strict';
   const clone = d => JSON.parse(JSON.stringify(d));
+  const finite2 = p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]);
 
   // Nodes exist only to be shared by walls. Anything no wall points at is an orphan,
   // which node merging produces on every join — GC after any wall removal or repoint.
@@ -701,6 +702,12 @@ App.edit = (() => {
   // case) beats the grid beats an angle constraint. The radius is a WORLD distance the
   // caller derives from screen pixels, so the feel does not change with zoom.
   function snap(doc, pt, opts) {
+    // Defend the invariant at the door. Every tier below compares against `pt`, and every
+    // comparison with NaN is false, so a non-finite input would fall through all of them
+    // and be echoed straight back out — handing a NaN to the caller that puts it in the
+    // document, after which a vehicle silently teleports away.
+    if (!finite2(pt)) return { pt: [0, 0], kind: 'free' };
+
     const o = Object.assign({ radius: 0.2, grid: 0.5, from: null, angleStep: 15, enabled: true }, opts);
     if (!o.enabled) return { pt: [pt[0], pt[1]], kind: 'free' };
 
@@ -740,9 +747,10 @@ App.edit = (() => {
     return { pt: [pt[0], pt[1]], kind: 'free' };
   }
 
+  // Math.min/max propagate NaN, so NaN must be replaced. Infinity is naturally clamped.
   const clampPt = (doc, pt) => [
-    Math.min(doc.plot.w, Math.max(0, pt[0])),
-    Math.min(doc.plot.h, Math.max(0, pt[1])),
+    isNaN(pt[0]) ? 0 : Math.min(doc.plot.w, Math.max(0, pt[0])),
+    isNaN(pt[1]) ? 0 : Math.min(doc.plot.h, Math.max(0, pt[1])),
   ];
 
   return { gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength, snap, clampPt };
