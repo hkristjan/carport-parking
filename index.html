@@ -737,7 +737,10 @@ function step(dt) {
 
 // ---------- Rendering
 const cv = $('c'), g = cv.getContext('2d');
-let S = 40, OX = 0, OY = 0, VW = 0, VH = 0;
+// One camera for both modes. fit() is one way to set it; Phase B's editor pans and
+// zooms it directly.
+const view = { scale: 40, ox: 0, oy: 0 };
+let VW = 0, VH = 0;
 const compact = matchMedia('(pointer: coarse), (max-width: 760px), (max-height: 520px)');
 function fit() {
   // Size from the layout viewport: it is what the CSS media queries and the
@@ -766,16 +769,18 @@ function fit() {
   }
   const availH = Math.max(140, VH - top - bottom);
   const { w: PW, h: PH } = world.extent;
-  S = Math.min(VW / PW, availH / PH) * 0.94;
-  OX = (VW - PW * S) / 2; OY = top + (availH - PH * S) / 2;
+  view.scale = Math.min(VW / PW, availH / PH) * 0.94;
+  view.ox = (VW - PW * view.scale) / 2;
+  view.oy = top + (availH - PH * view.scale) / 2;
 }
 addEventListener('resize', fit);
 addEventListener('orientationchange', () => setTimeout(fit, 150));
 if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 compact.addEventListener('change', fit);
 fit();
+const toWorld = (cx, cy) => [(cx - view.ox) / view.scale, (cy - view.oy) / view.scale];
 cv.addEventListener('pointerdown', e => {
-  const x = (e.clientX - OX) / S, y = (e.clientY - OY) / S;
+  const [x, y] = toWorld(e.clientX, e.clientY);
   for (let i = vehicles.length - 1; i >= 0; i--) if (pointInVehicle(x, y, vehicles[i])) { select(vehicles[i]); return; }
 });
 
@@ -850,7 +855,7 @@ wheelEl.addEventListener('keydown', e => {
   e.preventDefault(); e.stopPropagation();
 });
 setMode('arrows');
-const px = m => m * S;
+const px = m => m * view.scale;
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 function rect(r, fill) { g.fillStyle = fill; g.fillRect(px(r.x), px(r.y), px(r.w), px(r.h)); }
 function roundRect(x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
@@ -864,7 +869,7 @@ function drawDim(x1, y1, x2, y2, label) {
     if (horiz) { g.moveTo(px(x), px(y - t)); g.lineTo(px(x), px(y + t)); } else { g.moveTo(px(x - t), px(y)); g.lineTo(px(x + t), px(y)); }
     g.stroke();
   }
-  g.fillStyle = '#4b5257'; g.font = `${Math.max(10, S * 0.28)}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  g.fillStyle = '#4b5257'; g.font = `${Math.max(10, view.scale * 0.28)}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
   if (horiz) g.fillText(label, px((x1 + x2) / 2), px(y1) - 3);
   else { g.save(); g.translate(px(x1) - 4, px((y1 + y2) / 2)); g.rotate(-Math.PI / 2); g.fillText(label, 0, 0); g.restore(); }
 }
@@ -942,7 +947,7 @@ function draw() {
   const dpr = Math.min(2, devicePixelRatio || 1);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, VW, VH);
-  g.translate(OX, OY);
+  g.translate(view.ox, view.oy);
   paintList(0, App.registry.VEHICLE_Z);
 
   for (const v of vehicles) if (v !== active) drawVehicle(v, false);

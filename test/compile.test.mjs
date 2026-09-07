@@ -75,3 +75,9 @@ test('unknown types are skipped rather than fatal', () => {
   assert.equal(c.drawList.length, 0);
   assert.match(c.warnings.join(), /nosuchtype/);
 });
+
+test('a larger plot compiles to a larger extent and matching bounds', () => {
+  const c = compile(doc({ plot: { w: 40, h: 30 } }));
+  assert.deepEqual(c.extent, { w: 40, h: 30 });
+  assert.deepEqual(c.bounds[1], { x: -1, y: 30, w: 42, h: 1 });
+});

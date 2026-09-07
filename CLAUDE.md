@@ -123,6 +123,54 @@ viewport, which is what the CSS media queries and the absolutely-positioned chro
 are measured against. Do not switch it to `visualViewport`: that tracks pinch-zoom
 and the on-screen keyboard, and can disagree with the layout the canvas sits in.
 
+## Namespaces and the layout document
+
+The world is data. `App.defaults.carport` is a layout document, `App.compile(doc)`
+derives collision quads, wall runs and a z-sorted draw list, and physics and rendering
+read only that. Nothing reads world literals — there are none.
+
+DOM-free namespaces live in `<script data-ns="…">` blocks, in dependency order:
+`geom`, `registry`, `layout`, `defaults`, `compile`. They must not touch `document` or
+`window`: the test harness runs them in a bare `vm` context, and touching the DOM
+there throws. Everything else stays in the final `<script>` main IIFE.
+
+Adding a scene type is a `registry.types` entry — `kind`, `solid`, optional
+`footprint`, and `layers` of `{z, draw}`. Nothing else changes. `layers` is plural
+because the carport paints its floor under the vehicles and its roof over them;
+vehicles paint at `registry.VEHICLE_Z` (50).
+
+Four rules the rendering path depends on. Each of these was learned by breaking it:
+
+- **A layer carries either `fill` or `draw`, never both.** `paintList` tests `fill`
+  first, so a layer with both silently never runs its `draw`.
+- **Every painter sets every stroke and fill property it uses, and inherits none.**
+  `drawRun` leaves `lineWidth` at a wall thickness — tens of pixels. The deck's plank
+  lines once inherited it and became a solid wash over the whole deck.
+- **`paintList` merges every paint source into ONE z-sorted queue** — drawList entries,
+  wall runs, bay outlines, dimension lines. Painting them as separate groups honours z
+  only within each group, which silently inverted the fence (a run at z 40) against the
+  fence posts (an item at z 41).
+- **`paintList` wraps its work in `save`/`restore`** so nothing leaks out of it.
+
+Because of that last rule the dashed bay outlines and street centre line now use the
+default `butt` line cap, where the original inherited `round` leaked from the previous
+frame's palm fronds. That is the one intentional pixel difference from the pre-migration
+scene: 0.08% of dark pixels, identical mean luminance.
+
+Run the tests with:
+
+```bash
+node --test test/*.test.mjs
+```
+
+They cover `geom`, `layout` and `compile` only. Rendering and interaction stay
+eyeball-verified: extract, `node --check`, then open the page and drive it.
+
+Two `file://` traps: `fetch()` and ES modules are both CORS-blocked, so the default
+layout is an inline literal and namespaces are classic script blocks. And validate
+every coordinate as finite on load — a single `NaN` makes SAT silently report *no
+collision*, so bad data turns collisions off rather than crashing.
+
 ## Git
 
 Never `git push` without being asked. One logical change per commit.
