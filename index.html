@@ -1031,10 +1031,33 @@ if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 compact.addEventListener('change', fit);
 fit();
 const toWorld = (cx, cy) => [(cx - view.ox) / view.scale, (cy - view.oy) / view.scale];
+
+// Reuses App.edit.snap so hit-testing and snapping can never disagree about what is
+// under the pointer. The radius is 10 screen pixels expressed in world units.
+function hitTest(pt) {
+  const s = App.edit.snap(doc, pt, { radius: 10 / view.scale, grid: 0, from: null });
+  if (s.kind === 'node') return { nodeId: s.nodeId };
+  if (s.kind === 'wall') return { wallId: s.wallId };
+  return {};
+}
+
 cv.addEventListener('pointerdown', e => {
   const [x, y] = toWorld(e.clientX, e.clientY);
+  if (isBuild()) return editorPointerDown(e, [x, y]);
   for (let i = vehicles.length - 1; i >= 0; i--) if (pointInVehicle(x, y, vehicles[i])) { select(vehicles[i]); return; }
 });
+
+function editorPointerDown(e, pt) {
+  const hit = hitTest(pt);
+  const add = e.shiftKey;
+  if (hit.nodeId) {
+    selection = add ? { walls: selection.walls, nodes: [...new Set([...selection.nodes, hit.nodeId])] }
+                    : { walls: [], nodes: [hit.nodeId] };
+  } else if (hit.wallId) {
+    selection = add ? { walls: [...new Set([...selection.walls, hit.wallId])], nodes: selection.nodes }
+                    : { walls: [hit.wallId], nodes: [] };
+  } else if (!add) selection = { walls: [], nodes: [] };
+}
 
 // ---------- The side panel becomes a bottom sheet on small screens
 function setSheet(open) {
@@ -1210,6 +1233,34 @@ function paintList(from, to) {
   g.restore();
 }
 
+// The overlay is chrome, not scene: drawn after both paintList calls, above everything,
+// and deliberately does not go through the z-sorted queue.
+function drawEditOverlay() {
+  g.save();
+  // wall centrelines, so you can see what you are about to grab
+  g.strokeStyle = 'rgba(46,53,56,.35)'; g.lineWidth = 1; g.setLineDash([px(0.12), px(0.12)]);
+  for (const w of doc.walls) {
+    const p = doc.nodes[w.from], q = doc.nodes[w.to];
+    g.beginPath(); g.moveTo(px(p[0]), px(p[1])); g.lineTo(px(q[0]), px(q[1])); g.stroke();
+  }
+  g.setLineDash([]);
+  // selected walls
+  g.strokeStyle = '#f2b233'; g.lineWidth = Math.max(2, px(0.06));
+  for (const id of selection.walls) {
+    const w = doc.walls.find(x => x.id === id); if (!w) continue;
+    const p = doc.nodes[w.from], q = doc.nodes[w.to];
+    g.beginPath(); g.moveTo(px(p[0]), px(p[1])); g.lineTo(px(q[0]), px(q[1])); g.stroke();
+  }
+  // node handles
+  for (const [id, n] of Object.entries(doc.nodes)) {
+    const sel = selection.nodes.includes(id);
+    g.beginPath(); g.arc(px(n[0]), px(n[1]), Math.max(3, px(0.09)), 0, Math.PI * 2);
+    g.fillStyle = sel ? '#f2b233' : '#fff'; g.fill();
+    g.strokeStyle = '#2e3538'; g.lineWidth = 1.5; g.stroke();
+  }
+  g.restore();
+}
+
 function draw() {
   const dpr = Math.min(2, devicePixelRatio || 1);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1220,6 +1271,7 @@ function draw() {
   for (const v of vehicles) if (v !== active) drawVehicle(v, false);
   if (active) drawVehicle(active, true);
   paintList(App.registry.VEHICLE_Z, Infinity);
+  if (isBuild()) drawEditOverlay();
 }
 
 // ---------- HUD + loop
