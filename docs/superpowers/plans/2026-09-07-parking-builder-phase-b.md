@@ -699,7 +699,7 @@ function editorKey(e) {
   if (meta && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     const next = e.shiftKey ? history.redo(doc) : history.undo(doc);
-    if (next) replaceDoc(next);
+    if (next) { draft = null; hoverSnap = null; pressAt = null; replaceDoc(next); }
   }
 }
 
@@ -721,6 +721,10 @@ function setEditMode(on) {
   document.body.classList.toggle('build-mode', on);
   if (on) { keys.ArrowUp = keys.ArrowDown = keys.ArrowLeft = keys.ArrowRight = false; }
   else selection = { walls: [], nodes: [] };
+  // Abandon any half-drawn chain on EITHER transition. A draft that survives a mode
+  // round-trip silently resumes on the next click, and one that survives an undo names
+  // nodes the document no longer has.
+  draft = null; hoverSnap = null; pressAt = null;
 }
 modeDrive.addEventListener('click', () => setEditMode(false));
 modeBuild.addEventListener('click', () => setEditMode(true));
@@ -929,7 +933,10 @@ function commitChain(pts, snaps) {
   let next = doc, ids = [];
   for (let i = 0; i < pts.length; i++) {
     const s = snaps[i];
-    if (s && s.kind === 'node') { ids.push(s.nodeId); continue; }
+    // Only reuse a snapped node if it STILL exists. A draft can outlive the document it
+    // was snapped against — undo mid-chain removes the node, and pushing its dead id here
+    // builds a wall against a missing node, which throws in both the overlay and compile.
+    if (s && s.kind === 'node' && next.nodes[s.nodeId]) { ids.push(s.nodeId); continue; }
     if (s && s.kind === 'wall') {
       // splitWall REPLACES the wall with two halves, so a second point in the same
       // chain that snapped to the same wall would name an id that no longer exists.
