@@ -207,13 +207,21 @@ from the plan, with a clean console and no error anywhere. That is why
 
 ## Editing the layout
 
-Every document mutation goes through `App.edit`, which is DOM-free and unit-tested:
-`addNode`, `addWall`, `moveNode`, `mergeNodes`, `splitWall`, `setLength` and
-`deleteWalls` take a document and return a NEW one — none mutates its input, which is
-what makes undo a plain snapshot stack. `gcNodes` is the same shape and is already
-called internally by `deleteWalls` and `mergeNodes`. `snap` and `history` round out the
-namespace but don't fit that mould: `snap` reads a document and returns a candidate
-point, and `history()` is a factory returning a push/undo/redo stack of snapshots.
+Every document mutation goes through `App.edit`, which is DOM-free and unit-tested.
+**None of them mutates its input** — that is what makes undo a plain snapshot stack —
+but they do not all return the same shape, so check before assigning:
+
+| Returns a document | Returns a wrapper |
+|---|---|
+| `moveNode`, `mergeNodes`, `setLength`, `deleteWalls`, `gcNodes`, `chainToDoc` | `addNode` → `{doc, id}` · `addWall` → `{doc, id}` · `splitWall` → `{doc, nodeId, wallIds}` |
+
+Writing `doc = App.edit.addNode(doc, pt)` therefore leaves you holding the wrapper, and
+every later `doc.nodes` read fails — destructure `.doc`.
+
+`gcNodes` is already called internally by `deleteWalls` and `mergeNodes`. The rest of the
+namespace does not mutate documents at all: `snap` reads one and returns a candidate
+point, `clampPt` clamps a point into the plot, and `history()` is a factory returning a
+push/undo/redo stack of snapshots.
 
 The main IIFE owns only pointer handling, the overlay and the properties panel.
 
