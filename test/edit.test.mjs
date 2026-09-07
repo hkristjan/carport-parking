@@ -457,3 +457,21 @@ test('snap with opts omitted uses the documented defaults', () => {
   assert.equal(n.kind, 'node', 'radius 0.2, and snapping is enabled by default');
   assert.equal(n.nodeId, 'a');
 });
+
+test('snap skips an excluded node, so a dragged node cannot snap to itself', () => {
+  const d = snapDoc();
+  const s = edit.snap(d, [0.02, 0.02], { radius: 0.2, grid: 0.5, exclude: 'a' });
+  assert.equal(s.kind, 'wall', 'the next tier down resolves it instead');
+  assert.deepEqual(s.pt.map(round), [0.02, 0]);
+});
+
+test('excluding one node still lets the drop merge onto another', () => {
+  // exactly the drag case: the dragged node has been previewed onto b
+  const d = Object.assign(layout.blank('t'), {
+    nodes: { a: [10, 0.02], b: [10, 0] },
+    walls: [{ id: 'w1', from: 'a', to: 'b', t: 0.2, type: 'wall' }],
+  });
+  const s = edit.snap(d, [10, 0.02], { radius: 0.2, grid: 0, exclude: 'a' });
+  assert.equal(s.kind, 'node');
+  assert.equal(s.nodeId, 'b');
+});

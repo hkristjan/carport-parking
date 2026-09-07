@@ -736,11 +736,14 @@ App.edit = (() => {
     // document, after which a vehicle silently teleports away.
     if (!finite2(pt)) return { pt: [0, 0], kind: 'free' };
 
-    const o = Object.assign({ radius: 0.2, grid: 0.5, from: null, angleStep: 15, enabled: true }, opts);
+    // `exclude` is a node id the node tier skips. A drag snaps against the LIVE document,
+    // in which the dragged node sits under the pointer and would always win its own tier.
+    const o = Object.assign({ radius: 0.2, grid: 0.5, from: null, angleStep: 15, enabled: true, exclude: null }, opts);
     if (!o.enabled) return { pt: [pt[0], pt[1]], kind: 'free' };
 
     let best = null;
     for (const [id, n] of Object.entries(doc.nodes)) {
+      if (id === o.exclude) continue;
       const d = Math.hypot(n[0] - pt[0], n[1] - pt[1]);
       if (d <= o.radius && (!best || d < best.d)) best = { d, pt: [n[0], n[1]], kind: 'node', nodeId: id };
     }
@@ -1241,6 +1244,10 @@ function snapAt(pt, e) {
     grid: 0.5,
     from: draft && draft.pts.length ? draft.pts[draft.pts.length - 1] : null,
     enabled: !e.altKey,
+    // While dragging a node the live document has it under the pointer, so without this
+    // it snaps to itself, the preview sticks between grid cells, and preview and commit
+    // resolve differently.
+    exclude: drag && drag.kind === 'node' ? drag.id : null,
   });
 }
 
@@ -1263,14 +1270,16 @@ function wallPointerUp(e) {
   endChain();                               // a drag: one wall, done
 }
 // A node drag drops onto another node to merge them; a wall drag just relocates both
-// ends. Either way the whole gesture is one undo entry: replay drag.orig (undoing the
-// live preview's mutations without a snapshot) then commit the final doc once.
+// ends. Either way the whole gesture is one undo entry: push drag.orig once and install
+// the final document.
 const endDrag = e => {
   if (!drag) return;
   const pt = toWorld(e.clientX, e.clientY);
   let next = doc;
   if (drag.kind === 'node') {
-    const s = App.edit.snap(drag.orig, pt, { radius: 10 / view.scale, grid: 0, enabled: !e.altKey });
+    // Against the LIVE document with the dragged node excluded, which is exactly what the
+    // preview resolved — so what the indicator showed is what gets merged.
+    const s = App.edit.snap(doc, pt, { radius: 10 / view.scale, grid: 0, enabled: !e.altKey, exclude: drag.id });
     if (s.kind === 'node' && s.nodeId !== drag.id) next = App.edit.mergeNodes(doc, s.nodeId, drag.id);
   }
   const moved = JSON.stringify(next) !== JSON.stringify(drag.orig);
@@ -1308,7 +1317,7 @@ cv.addEventListener('pointermove', e => {
       next = App.edit.moveNode(next, w.to, [q[0] + dx, q[1] + dy]);
     }
     replaceDoc(next);          // live preview: recompile, but no undo snapshot yet
-    dragSnap = drag.kind === 'node' ? s : null;
+    dragSnap = drag.kind === 'node' ? s : null;      // drawn by the overlay: what a drop would join
     return;
   }
   hoverSnap = tool === 'wall' ? snapAt(pt, e) : null;
@@ -1576,10 +1585,12 @@ function drawEditOverlay() {
     if (hoverSnap) g.lineTo(px(hoverSnap.pt[0]), px(hoverSnap.pt[1]));
     g.stroke();
   }
-  // the snap indicator: red joins a corner, green splits a wall, grey is grid/angle
-  if (hoverSnap && hoverSnap.kind !== 'free') {
-    const [hx, hy] = hoverSnap.pt;
-    g.strokeStyle = hoverSnap.kind === 'node' ? '#c62f2f' : hoverSnap.kind === 'wall' ? '#3f8f5a' : '#6b7178';
+  // the snap indicator: red joins a corner, green splits a wall, grey is grid/angle.
+  // During a node drag it comes from dragSnap, so the user can see what a drop would merge.
+  const snapNow = dragSnap || hoverSnap;
+  if (snapNow && snapNow.kind !== 'free') {
+    const [hx, hy] = snapNow.pt;
+    g.strokeStyle = snapNow.kind === 'node' ? '#c62f2f' : snapNow.kind === 'wall' ? '#3f8f5a' : '#6b7178';
     g.lineWidth = 2; g.setLineDash([]);
     g.beginPath(); g.arc(px(hx), px(hy), Math.max(5, px(0.14)), 0, Math.PI * 2); g.stroke();
   }
