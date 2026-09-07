@@ -708,8 +708,18 @@ function editorKey(e) {
 // into the document, so skipping it leaves collision stale while rendering looks right.
 function commit(next) { history.push(doc); replaceDoc(next); }
 function replaceDoc(next) {
+  // Snapshot FIRST. `next` is sometimes `doc` itself (a drag that ends without a merge
+  // passes the live document), and clearing doc's keys would then empty `next` too,
+  // leaving the document permanently blank and every later frame throwing.
+  const src = Object.assign({}, next);
   for (const k of Object.keys(doc)) delete doc[k];
-  Object.assign(doc, next);
+  Object.assign(doc, src);
+  // A mutation can delete a selected wall — via Delete, or via undo. Prune the selection
+  // to what still exists, or the properties panel dereferences a wall that is gone.
+  selection = {
+    walls: selection.walls.filter(id => doc.walls.some(w => w.id === id)),
+    nodes: selection.nodes.filter(id => doc.nodes[id]),
+  };
   world = App.compile(doc);
   if (world.warnings.length) console.warn('layout warnings:', world.warnings);
 }
@@ -1208,9 +1218,11 @@ handles, never through bare `window.<id>` globals.
 let anchor = 'from';
 function syncProps() {
   const ids = selection.walls;
-  propsGroup.hidden = !isBuild() || ids.length === 0;
-  if (propsGroup.hidden) return;
   const ws = ids.map(id => doc.walls.find(w => w.id === id)).filter(Boolean);
+  // Gate on the walls that actually EXIST, not on the ids. A selection can name a wall
+  // that a delete or an undo has just removed, and ws[0] would then be undefined.
+  propsGroup.hidden = !isBuild() || ws.length === 0;
+  if (propsGroup.hidden) return;
   const multi = ws.length > 1;
   const w = ws[0];
   const p = doc.nodes[w.from], q = doc.nodes[w.to];
