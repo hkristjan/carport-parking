@@ -621,7 +621,7 @@ The first task that touches the running app. Drive mode must be byte-identical a
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `mode` (`'drive' | 'build'`), `setEditMode(on)`, and `history` (an `App.edit.history()` instance) in the main IIFE.
+- Produces: `editMode` (`'drive' | 'build'`), `isBuild()`, `setEditMode(on)`, `commit(next)`, `replaceDoc(next)`, `selection`, and `history` (an `App.edit.history()` instance) in the main IIFE. The name is `editMode`, not `mode` — the touch controls already own `mode`.
 
 - [ ] **Step 1: Add the mode toggle to the panel**
 
@@ -656,8 +656,10 @@ After the `const doc = …; let world = …;` block, add:
 ```js
 // ---------- Build mode. Drive mode must behave exactly as it did before this existed.
 const history = App.edit.history();
-let mode = 'drive', selection = { walls: [], nodes: [] };
-const isBuild = () => mode === 'build';
+// NOT `mode` — the touch controls already own a module-level `mode` ('arrows'|'wheel'),
+// and a second `let mode` in the same scope is a SyntaxError that stops the page parsing.
+let editMode = 'drive', selection = { walls: [], nodes: [] };
+const isBuild = () => editMode === 'build';
 ```
 
 Then replace the first line of the `keydown` handler. It currently reads:
@@ -709,7 +711,7 @@ function replaceDoc(next) {
 }
 
 function setEditMode(on) {
-  mode = on ? 'build' : 'drive';
+  editMode = on ? 'build' : 'drive';
   modeBuild.setAttribute('aria-pressed', String(on));
   modeDrive.setAttribute('aria-pressed', String(!on));
   document.body.classList.toggle('build-mode', on);
