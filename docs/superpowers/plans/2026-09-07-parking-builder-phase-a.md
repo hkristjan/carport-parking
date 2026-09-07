@@ -1341,6 +1341,24 @@ Adding a scene type is a `registry.types` entry — `kind`, `solid`, optional
 because the carport paints its floor under the vehicles and its roof over them;
 vehicles paint at `registry.VEHICLE_Z` (50).
 
+Four rules the rendering path depends on. Each of these was learned by breaking it:
+
+- **A layer carries either `fill` or `draw`, never both.** `paintList` tests `fill`
+  first, so a layer with both silently never runs its `draw`.
+- **Every painter sets every stroke and fill property it uses, and inherits none.**
+  `drawRun` leaves `lineWidth` at a wall thickness — tens of pixels. The deck's plank
+  lines once inherited it and became a solid wash over the whole deck.
+- **`paintList` merges every paint source into ONE z-sorted queue** — drawList entries,
+  wall runs, bay outlines, dimension lines. Painting them as separate groups honours z
+  only within each group, which silently inverted the fence (a run at z 40) against the
+  fence posts (an item at z 41).
+- **`paintList` wraps its work in `save`/`restore`** so nothing leaks out of it.
+
+Because of that last rule the dashed bay outlines and street centre line now use the
+default `butt` line cap, where the original inherited `round` leaked from the previous
+frame's palm fronds. That is the one intentional pixel difference from the pre-migration
+scene: 0.08% of dark pixels, identical mean luminance.
+
 Run the tests with:
 
 ```bash
