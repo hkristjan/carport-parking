@@ -273,3 +273,27 @@ test('clampPt replaces a non-finite component rather than propagating it', () =>
   assert.deepEqual(edit.clampPt(snapDoc(), [NaN, 5]), [0, 5]);
   assert.deepEqual(edit.clampPt(snapDoc(), [Infinity, 3]), [20, 3]);
 });
+
+// Pins the invariant behind the commitChain fix: a draft can snap a node id that the
+// document later loses (undo mid-chain is one way; here we just delete its only wall).
+// Building a wall against that dead id unconditionally is exactly what a stale draft
+// used to do, and it must fail validation and blow up compile. The guarded path — fall
+// back to addNode when the snapped node is gone — must produce a document that both
+// validate and compile accept.
+test('a wall built against a node lost since it was snapped fails validate and compile; the addNode fallback does not', () => {
+  const gone = edit.deleteWalls(doc(), ['w2']);   // c was only used by w2, so gcNodes drops it
+  assert.equal(gone.nodes.c, undefined, 'c should have been garbage-collected');
+
+  // Unconditional reuse of the dead snapped id, as the buggy commitChain branch did.
+  const stale = edit.addWall(gone, 'a', 'c', 0.2, 'wall').doc;
+  const errors = layout.validate(stale);
+  assert.ok(errors.some(m => /references unknown node c/.test(m)),
+    'validate should reject a wall referencing the missing node');
+  assert.throws(() => compile(stale), 'compile should throw rather than silently succeed');
+
+  // The guarded path: since the snapped node no longer exists, fall back to a fresh node.
+  const added = edit.addNode(gone, [5, 5]);
+  const fixed = edit.addWall(added.doc, 'a', added.id, 0.2, 'wall').doc;
+  assert.deepEqual(layout.validate(fixed), []);
+  assert.doesNotThrow(() => compile(fixed));
+});
