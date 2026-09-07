@@ -114,6 +114,7 @@
     /* shown for the whole compact layout, not just coarse pointers, so a short
        or narrow window gets the on-screen controls too */
     #controlsGroup { display: block; }
+    #modeDrive, #modeBuild { display: none; }
     body.mode-arrows .pad { display: flex; }
     body.mode-wheel .pedals { display: flex; }
     body.mode-wheel .wheel { display: block; }
@@ -177,6 +178,13 @@
   <div class="group">
     <label for="addModel">Add to street</label>
     <div class="row"><select id="addModel"></select><button id="addBtn">Add vehicle</button></div>
+  </div>
+  <div class="group">
+    <label>Mode</label>
+    <div class="row seg">
+      <button id="modeDrive" class="seg-btn" aria-pressed="true">Drive</button>
+      <button id="modeBuild" class="seg-btn" aria-pressed="false">Build</button>
+    </div>
   </div>
   <div class="group" id="controlsGroup">
     <label>Controls</label>
@@ -767,6 +775,12 @@ if (loaded.errors) throw new Error('default layout is invalid: ' + loaded.errors
 const doc = loaded.doc;
 let world = App.compile(doc);
 if (world.warnings.length) console.warn('layout warnings:', world.warnings);
+// ---------- Build mode. Drive mode must behave exactly as it did before this existed.
+// NOT `mode` — the touch controls already own a module-level `mode` ('arrows'|'wheel'),
+// and declaring it again with `let` in the same scope is a SyntaxError that stops the page parsing.
+const history = App.edit.history();
+let editMode = 'drive', selection = { walls: [], nodes: [] };
+const isBuild = () => editMode === 'build';
 // ---------- DOM
 const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
@@ -774,6 +788,7 @@ const addModel = $('addModel'), addBtn = $('addBtn'), swapModel = $('swapModel')
 const swatchBox = $('swatches');
 const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud');
 const wheelEl = $('wheel'), modeArrows = $('modeArrows'), modeWheel = $('modeWheel');
+const modeDrive = $('modeDrive'), modeBuild = $('modeBuild');
 const ctrlEls = [...document.querySelectorAll('.pad, .pedals, .wheel')];   // every on-screen control cluster
 
 // ---------- Models (metres; length, width without mirrors, wheelbase, kerb-to-kerb turning circle)
@@ -857,7 +872,12 @@ removeBtn.addEventListener('click', () => {
 
 const keys = {};
 addEventListener('keydown', e => {
-  if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') && !e.key.startsWith('Arrow')) return;
+  // A text field owns every key while it has focus — otherwise typing "3.5" into a
+  // thickness box also fires the R reset. INPUT was missing from this guard.
+  const tag = e.target && e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  if ((tag === 'SELECT' || tag === 'BUTTON') && !e.key.startsWith('Arrow')) return;
+  if (isBuild()) { editorKey(e); return; }      // build mode never drives the car
   if (e.key.startsWith('Arrow')) e.preventDefault();
   keys[e.key] = true;
   if (e.key === 'r' || e.key === 'R') reset();
@@ -868,6 +888,45 @@ document.querySelectorAll('[data-k]').forEach(b => {
   const k = b.dataset.k, on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
 });
+
+function editorKey(e) {
+  if (e.key === 'Escape') { selection = { walls: [], nodes: [] }; return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (!selection.walls.length) return;
+    e.preventDefault();
+    commit(App.edit.deleteWalls(doc, selection.walls));
+    selection = { walls: [], nodes: [] };
+    return;
+  }
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    const next = e.shiftKey ? history.redo(doc) : history.undo(doc);
+    if (next) replaceDoc(next);
+  }
+}
+
+// Every document mutation goes through here: snapshot for undo, swap, recompile.
+// The recompile is not optional — world.runs and world.drawList hold live references
+// into the document, so skipping it leaves collision stale while rendering looks right.
+function commit(next) { history.push(doc); replaceDoc(next); }
+function replaceDoc(next) {
+  for (const k of Object.keys(doc)) delete doc[k];
+  Object.assign(doc, next);
+  world = App.compile(doc);
+  if (world.warnings.length) console.warn('layout warnings:', world.warnings);
+}
+
+function setEditMode(on) {
+  editMode = on ? 'build' : 'drive';
+  modeBuild.setAttribute('aria-pressed', String(on));
+  modeDrive.setAttribute('aria-pressed', String(!on));
+  document.body.classList.toggle('build-mode', on);
+  if (on) { keys.ArrowUp = keys.ArrowDown = keys.ArrowLeft = keys.ArrowRight = false; }
+  else selection = { walls: [], nodes: [] };
+}
+modeDrive.addEventListener('click', () => setEditMode(false));
+modeBuild.addEventListener('click', () => setEditMode(true));
 
 // ---------- Simulation (only the selected vehicle moves)
 function step(dt) {
@@ -1168,7 +1227,7 @@ function updHits(bump) {
 let last = performance.now(), acc = 0; const DT = 1 / 120;
 function loop(now) {
   acc += Math.min(0.1, (now - last) / 1000); last = now;
-  while (acc >= DT) { step(DT); acc -= DT; }
+  while (acc >= DT) { if (!isBuild()) step(DT); acc -= DT; }
   draw();
   if (mode === 'wheel') renderWheel();
   timeEl.textContent = fmtT(state.t);
