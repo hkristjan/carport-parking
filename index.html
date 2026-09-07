@@ -960,10 +960,11 @@ document.querySelectorAll('[data-k]').forEach(b => {
 
 function editorKey(e) {
   if (e.key === 'Enter') { endChain(); return; }
-  if (e.key === 'Escape') { draft = null; selection = { walls: [], nodes: [] }; syncProps(); return; }
+  if (e.key === 'Escape') { cancelGesture(); selection = { walls: [], nodes: [] }; syncProps(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (!selection.walls.length) return;
     e.preventDefault();
+    cancelGesture();
     commit(App.edit.deleteWalls(doc, selection.walls));
     selection = { walls: [], nodes: [] };
     return;
@@ -972,7 +973,7 @@ function editorKey(e) {
   if (meta && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     const next = e.shiftKey ? history.redo(doc) : history.undo(doc);
-    if (next) { draft = null; hoverSnap = null; pressAt = null; replaceDoc(next); }
+    if (next) { cancelGesture(); replaceDoc(next); }
   }
 }
 
@@ -1029,7 +1030,7 @@ function setEditMode(on) {
   // Abandon any half-drawn chain on EITHER transition. A draft that survives a mode
   // round-trip silently resumes on the next click, and one that survives an undo names
   // nodes the document no longer has.
-  draft = null; hoverSnap = null; pressAt = null;
+  cancelGesture();
   syncProps();
 }
 modeDrive.addEventListener('click', () => setEditMode(false));
@@ -1043,8 +1044,13 @@ let pressAt = null;
 const DRAG_MIN = 0.1;  // metres: below this a release is a click, not a drag
 let drag = null, dragSnap = null;
 
+// Any transition that changes the document out from under a gesture must abandon that
+// gesture wholesale. `drag.orig` and `draft` both name a document generation that no longer
+// exists after an undo, a delete or a mode switch; replaying either one re-installs it.
+function cancelGesture() { draft = null; hoverSnap = null; pressAt = null; drag = null; dragSnap = null; }
+
 function setTool(t) {
-  tool = t; draft = null;
+  tool = t; cancelGesture();
   toolSelect.setAttribute('aria-pressed', String(t === 'select'));
   toolWall.setAttribute('aria-pressed', String(t === 'wall'));
 }
@@ -1254,9 +1260,12 @@ const endDrag = e => {
   history.push(orig);
   replaceDoc(next);
 };
-cv.addEventListener('pointerup', e => { wallPointerUp(e); endDrag(e); });
-cv.addEventListener('pointercancel', e => { wallPointerUp(e); endDrag(e); });
-cv.addEventListener('lostpointercapture', e => { wallPointerUp(e); endDrag(e); });
+// Gated on build mode like pointermove: on a touch device one finger can drag on the
+// canvas while another taps Drive, and an ungated release would commit a document
+// mutation after the app had left build mode.
+cv.addEventListener('pointerup', e => { if (!isBuild()) return; wallPointerUp(e); endDrag(e); });
+cv.addEventListener('pointercancel', e => { if (!isBuild()) return; wallPointerUp(e); endDrag(e); });
+cv.addEventListener('lostpointercapture', e => { if (!isBuild()) return; wallPointerUp(e); endDrag(e); });
 
 cv.addEventListener('pointermove', e => {
   if (!isBuild()) return;
