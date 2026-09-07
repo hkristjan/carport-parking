@@ -596,6 +596,45 @@ App.compile = (() => {
 })();
 </script>
 
+<script data-ns="edit">
+globalThis.App = globalThis.App || {};
+App.edit = (() => {
+  'use strict';
+  const clone = d => JSON.parse(JSON.stringify(d));
+
+  // Nodes exist only to be shared by walls. Anything no wall points at is an orphan,
+  // which node merging produces on every join — GC after any wall removal or repoint.
+  function gcNodes(doc) {
+    const out = clone(doc), used = new Set();
+    for (const w of out.walls) { used.add(w.from); used.add(w.to); }
+    for (const id of Object.keys(out.nodes)) if (!used.has(id)) delete out.nodes[id];
+    return out;
+  }
+
+  function deleteWalls(doc, ids) {
+    const drop = new Set(ids), out = clone(doc);
+    out.walls = out.walls.filter(w => !drop.has(w.id));
+    return gcNodes(out);
+  }
+
+  // Snapshot history. The caller pushes the document as it was BEFORE a mutation, so
+  // undo restores that snapshot and redo re-applies what the caller had at undo time.
+  function history(limit = 50) {
+    const past = [], future = [];
+    return {
+      push(doc) { past.push(clone(doc)); if (past.length > limit) past.shift(); future.length = 0; },
+      undo(current) { if (!past.length) return null; future.push(clone(current)); return past.pop(); },
+      redo(current) { if (!future.length) return null; past.push(clone(current)); return future.pop(); },
+      canUndo: () => past.length > 0,
+      canRedo: () => future.length > 0,
+      depth: () => past.length,
+    };
+  }
+
+  return { gcNodes, deleteWalls, history };
+})();
+</script>
+
 <script>
 (() => {
 'use strict';
