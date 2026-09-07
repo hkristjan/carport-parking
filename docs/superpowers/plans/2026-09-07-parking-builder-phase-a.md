@@ -1015,24 +1015,33 @@ function drawRun(run, stroke) {
 }
 ```
 
-- [ ] **Step 2: Add a z-banded list painter**
+- [ ] **Step 2: Add a z-ordered painter**
 
 Directly after those, add:
 
 ```js
-// Paint every drawList entry whose z falls in [from, to). Vehicles are painted
-// between the two calls, because today's scene draws its carport roof and palms
-// over the cars but its floor and bay outlines under them.
+// One z-ordered queue. drawList entries, wall runs, bay outlines and dimension lines all
+// compete for the same paint order, so they must be merged and sorted: painting them as
+// separate groups honours z only WITHIN each group, which silently inverts pairs such as
+// the fence (a run at z 40) against the fence posts (an item at z 41).
 function paintList(from, to) {
-  g.save();                        // never leak lineWidth/strokeStyle/lineDash out of here
+  const { BAY_Z, DIM_Z } = App.registry;
+  const ops = [];
   for (const d of world.drawList) {
-    if (d.z < from || d.z >= to) continue;
-    if (d.kind === 'area' && d.layer.fill) drawArea(d.obj.poly, d.layer.fill);
-    else if (d.layer.draw) d.layer.draw(g, d.obj, { px });
+    if (d.kind === 'area' && d.layer.fill) ops.push([d.z, () => drawArea(d.obj.poly, d.layer.fill)]);
+    else if (d.layer.draw) ops.push([d.z, () => d.layer.draw(g, d.obj, { px })]);
   }
-  // walls stroke per run rather than per wall, so they are painted from world.runs
-  // instead of drawList. Each run carries the z its type declared.
-  for (const run of world.runs) if (run.z >= from && run.z < to) drawRun(run, run.stroke);
+  for (const run of world.runs) ops.push([run.z, () => drawRun(run, run.stroke)]);
+  ops.push([BAY_Z, () => {
+    g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
+    for (const b of world.bays) g.strokeRect(px(b.rect[0]), px(b.rect[1]), px(b.rect[2]), px(b.rect[3]));
+    g.restore();
+  }]);
+  ops.push([DIM_Z, () => { for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label); }]);
+  ops.sort((a, b) => a[0] - b[0]);          // stable: same-z walls keep document order
+  g.save();                                 // never leak lineWidth/strokeStyle/lineDash out
+  for (const [z, fn] of ops) if (z >= from && z < to) fn();
+  g.restore();
 }
 ```
 
