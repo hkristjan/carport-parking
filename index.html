@@ -850,7 +850,9 @@ if (world.warnings.length) console.warn('layout warnings:', world.warnings);
 // ---------- Build mode. Drive mode must behave exactly as it did before this existed.
 // NOT `mode` — the touch controls already own a module-level `mode` ('arrows'|'wheel'),
 // and declaring it again with `let` in the same scope is a SyntaxError that stops the page parsing.
-const history = App.edit.history();
+// NOT `history`: that shadows window.history inside this IIFE, and this file has already
+// lost a round to a name collision (`mode`).
+const undoStack = App.edit.history();
 let editMode = 'drive', selection = { walls: [], nodes: [] };
 const isBuild = () => editMode === 'build';
 // ---------- DOM
@@ -984,7 +986,7 @@ function editorKey(e) {
   const meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === 'z') {
     e.preventDefault();
-    const next = e.shiftKey ? history.redo(doc) : history.undo(doc);
+    const next = e.shiftKey ? undoStack.redo(doc) : undoStack.undo(doc);
     if (next) { cancelGesture(); replaceDoc(next); }
   }
 }
@@ -1022,7 +1024,7 @@ function commit(next) {
   // Not in replaceDoc: that path also serves undo/redo and the live drag preview, and
   // re-clamping history entries would make undo lossy.
   next = App.edit.clampNodes(next);
-  history.push(doc);
+  undoStack.push(doc);
   replaceDoc(next);
 }
 // Every document mutation goes through here: swap, prune the selection, recompile.
@@ -1183,8 +1185,8 @@ function step(dt) {
 
 // ---------- Rendering
 const cv = $('c'), g = cv.getContext('2d');
-// One camera for both modes. fit() is one way to set it; Phase B's editor pans and
-// zooms it directly.
+// One camera for both modes, set by fit(): the plan is scaled to the viewport on load
+// and on every resize. Nothing else writes view.scale/ox/oy.
 const view = { scale: 40, ox: 0, oy: 0 };
 let VW = 0, VH = 0;
 const compact = matchMedia('(pointer: coarse), (max-width: 760px), (max-height: 520px)');
@@ -1289,7 +1291,7 @@ const endDrag = e => {
   // One snapshot per drag, taken from where the drag began. Push the ORIGINAL and install
   // the final document — never `replaceDoc(orig)` first: `next` is frequently `doc` itself,
   // and restoring orig into doc would rewrite `next` out from under the commit.
-  history.push(orig);
+  undoStack.push(orig);
   replaceDoc(next);
 };
 // Gated on build mode like pointermove: on a touch device one finger can drag on the

@@ -225,7 +225,7 @@ push/undo/redo stack of snapshots.
 
 The main IIFE owns only pointer handling, the overlay and the properties panel.
 
-Three rules:
+Six rules:
 
 - **`commit(next)` for anything the user should be able to undo; `replaceDoc(next)` for
   live previews.** A drag calls `replaceDoc` on every pointermove and `commit` once on
@@ -236,6 +236,19 @@ Three rules:
   collision stays stale — it looks like a physics bug, not a missing recompile.
 - **`gcNodes` after anything that removes or repoints a wall.** Merging corners orphans
   nodes on every join, and orphans accumulate invisibly.
+- **The live `doc` is sometimes its own `next`.** A drag that ends without a merge hands
+  `commit`/`replaceDoc` the live document itself, so the swap (`App.edit.applyDoc`) must
+  snapshot the incoming keys BEFORE clearing the live one — clearing first empties `next`
+  too and blanks the document. `commit` also refuses `next === doc` outright, so a
+  property field blurred with an empty selection cannot push a phantom undo entry.
+- **A gesture's transient state must die on every transition that changes the document**,
+  not only when the gesture ends. `draft`, `drag`, `dragSnap`, `hoverSnap` and `pressAt`
+  all name a document generation that an undo, a delete, a tool switch or a mode switch
+  has replaced; replaying one re-installs it. `cancelGesture()` is the single place that
+  clears them, and the release handlers are gated on build mode so a mode switch
+  mid-gesture cannot commit.
+- **The wall tool hardcodes `t: 0.2, type: 'wall'`** for everything it draws; a drawn wall
+  is retyped and re-thicknessed afterwards through the properties panel.
 
 Snap radii are always `10 / view.scale` — ten screen pixels expressed in world units, so
 the feel does not change with zoom. `Alt` suspends snapping.
