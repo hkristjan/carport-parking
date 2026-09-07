@@ -274,26 +274,58 @@ test('clampPt replaces a non-finite component rather than propagating it', () =>
   assert.deepEqual(edit.clampPt(snapDoc(), [Infinity, 3]), [20, 3]);
 });
 
-// Pins the invariant behind the commitChain fix: a draft can snap a node id that the
-// document later loses (undo mid-chain is one way; here we just delete its only wall).
-// Building a wall against that dead id unconditionally is exactly what a stale draft
-// used to do, and it must fail validation and blow up compile. The guarded path — fall
-// back to addNode when the snapped node is gone — must produce a document that both
-// validate and compile accept.
-test('a wall built against a node lost since it was snapped fails validate and compile; the addNode fallback does not', () => {
-  const gone = edit.deleteWalls(doc(), ['w2']);   // c was only used by w2, so gcNodes drops it
-  assert.equal(gone.nodes.c, undefined, 'c should have been garbage-collected');
+// chainToDoc is the pure fold behind the wall tool's drag-a-chain gesture: it folds a
+// list of points and their snap results into a document. Its three guards each prevent
+// a corrupt document, so each one is exercised directly here rather than reconstructed
+// by hand — see the revert-proof notes in the phase report for how each guard bites.
 
-  // Unconditional reuse of the dead snapped id, as the buggy commitChain branch did.
-  const stale = edit.addWall(gone, 'a', 'c', 0.2, 'wall').doc;
-  const errors = layout.validate(stale);
-  assert.ok(errors.some(m => /references unknown node c/.test(m)),
-    'validate should reject a wall referencing the missing node');
-  assert.throws(() => compile(stale), 'compile should throw rather than silently succeed');
+test('chainToDoc: two plain points create one wall between two new nodes', () => {
+  const d = doc();
+  const out = edit.chainToDoc(d, [[10, 10], [12, 10]], [{ kind: 'free' }, { kind: 'free' }]);
+  assert.equal(out.walls.length, 3, 'the two original walls plus one new one');
+  const added = out.walls.find(w => !['w1', 'w2'].includes(w.id));
+  assert.ok(added, 'a new wall was added');
+  assert.deepEqual(out.nodes[added.from], [10, 10]);
+  assert.deepEqual(out.nodes[added.to], [12, 10]);
+  assert.deepEqual(layout.validate(out), []);
+  assert.doesNotThrow(() => compile(out));
+});
 
-  // The guarded path: since the snapped node no longer exists, fall back to a fresh node.
-  const added = edit.addNode(gone, [5, 5]);
-  const fixed = edit.addWall(added.doc, 'a', added.id, 0.2, 'wall').doc;
-  assert.deepEqual(layout.validate(fixed), []);
-  assert.doesNotThrow(() => compile(fixed));
+test('chainToDoc: a snap naming a node absent from the document falls back to addNode', () => {
+  const d = doc();
+  // 'ghost' is not in d.nodes at all — the stalest possible snap, worse than one that
+  // was merely GC'd, and still must be caught by the same existence guard.
+  const out = edit.chainToDoc(d, [[3, 3], [4, 4]],
+    [{ kind: 'node', nodeId: 'ghost' }, { kind: 'free' }]);
+  assert.ok(out.walls.every(w => w.from !== 'ghost' && w.to !== 'ghost'),
+    'no wall references the missing node');
+  assert.deepEqual(layout.validate(out), []);
+  assert.doesNotThrow(() => compile(out));
+});
+
+test('chainToDoc: both points snapping to the same wall split it once, then fall back', () => {
+  const d = doc();       // w1 runs a(0,0) -> b(5,0)
+  const snaps = [{ kind: 'wall', wallId: 'w1' }, { kind: 'wall', wallId: 'w1' }];
+  const out = edit.chainToDoc(d, [[2, 0], [3, 0]], snaps);
+  assert.equal(out.walls.find(w => w.id === 'w1'), undefined, 'w1 was split away');
+  assert.deepEqual(layout.validate(out), []);
+  assert.doesNotThrow(() => compile(out));
+});
+
+test('chainToDoc: two identical consecutive points create no zero-length wall', () => {
+  const d = doc();
+  const before = out => out.walls.length;
+  const out = edit.chainToDoc(d, [[0, 0], [0, 0]],
+    [{ kind: 'node', nodeId: 'a' }, { kind: 'node', nodeId: 'a' }]);
+  assert.equal(before(out), 2, 'no wall was added for the repeated a->a point');
+  assert.equal(out.walls.some(w => w.from === w.to), false);
+  assert.deepEqual(layout.validate(out), []);
+  assert.doesNotThrow(() => compile(out));
+});
+
+test('chainToDoc does not mutate its input document', () => {
+  const d = doc();
+  const before = JSON.stringify(d);
+  edit.chainToDoc(d, [[10, 10], [12, 10]], [{ kind: 'free' }, { kind: 'free' }]);
+  assert.equal(JSON.stringify(d), before);
 });

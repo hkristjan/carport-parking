@@ -765,7 +765,35 @@ App.edit = (() => {
     isNaN(pt[1]) ? 0 : Math.min(doc.plot.h, Math.max(0, pt[1])),
   ];
 
-  return { gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength, snap, clampPt };
+  // Fold a drawn chain into the document. Pure: takes the points and their snap results
+  // and returns a new document. Every guard here prevents a corrupt document, so it lives
+  // in this namespace where the tests can reach it.
+  function chainToDoc(doc, pts, snaps) {
+    let next = doc, ids = [];
+    for (let i = 0; i < pts.length; i++) {
+      const s = snaps[i];
+      // Only reuse a snapped node if it STILL exists — a draft can outlive an undo.
+      if (s && s.kind === 'node' && next.nodes[s.nodeId]) { ids.push(s.nodeId); continue; }
+      if (s && s.kind === 'wall') {
+        // splitWall REPLACES the wall with two halves, so a second point snapping to the
+        // same wall names an id that is gone; it reports nodeId null. Fall back.
+        const r = splitWall(next, s.wallId, pts[i]);
+        if (r.nodeId) { next = r.doc; ids.push(r.nodeId); continue; }
+      }
+      const r = addNode(next, pts[i]);
+      next = r.doc; ids.push(r.id);
+    }
+    for (let i = 0; i + 1 < ids.length; i++) {
+      if (ids[i] === ids[i + 1]) continue;               // zero-length, skip
+      next = addWall(next, ids[i], ids[i + 1], 0.2, 'wall').doc;
+    }
+    return next;
+  }
+
+  return {
+    gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength,
+    snap, clampPt, chainToDoc,
+  };
 })();
 </script>
 
@@ -1081,31 +1109,9 @@ function snapAt(pt, e) {
 
 // A chain becomes a run of walls sharing nodes. Where a point snapped to an existing
 // node we reuse it (that IS the connection); where it snapped to a centreline we split
-// that wall so the junction is real rather than coincidental.
-function commitChain(pts, snaps) {
-  let next = doc, ids = [];
-  for (let i = 0; i < pts.length; i++) {
-    const s = snaps[i];
-    // Only reuse a snapped node if it STILL exists. A draft can outlive the document it
-    // was snapped against — undo mid-chain removes the node, and pushing its dead id here
-    // builds a wall against a missing node, which throws in both the overlay and compile.
-    if (s && s.kind === 'node' && next.nodes[s.nodeId]) { ids.push(s.nodeId); continue; }
-    if (s && s.kind === 'wall') {
-      // splitWall REPLACES the wall with two halves, so a second point in the same
-      // chain that snapped to the same wall would name an id that no longer exists.
-      // splitWall reports nodeId null for an unknown id; fall back to a plain node.
-      const r = App.edit.splitWall(next, s.wallId, pts[i]);
-      if (r.nodeId) { next = r.doc; ids.push(r.nodeId); continue; }
-    }
-    const r = App.edit.addNode(next, pts[i]);
-    next = r.doc; ids.push(r.id);
-  }
-  for (let i = 0; i + 1 < ids.length; i++) {
-    if (ids[i] === ids[i + 1]) continue;                    // zero-length, skip
-    next = App.edit.addWall(next, ids[i], ids[i + 1], 0.2, 'wall').doc;
-  }
-  commit(next);
-}
+// that wall so the junction is real rather than coincidental. The fold itself is pure
+// and lives in App.edit, where its guards are reachable by tests; this is just wiring.
+function commitChain(pts, snaps) { commit(App.edit.chainToDoc(doc, pts, snaps)); }
 
 // A release far from where the press landed was a drag: that gesture draws exactly one
 // wall and ends. A release at the press point was a click: leave the chain open.
