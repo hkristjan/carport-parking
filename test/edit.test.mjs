@@ -97,3 +97,81 @@ test('history snapshots are deep copies, immune to later mutation', () => {
   v1.nodes.a[0] = 999;
   assert.deepEqual(h.undo(doc()).nodes.a, [0, 0]);
 });
+
+const round = n => { const r = Math.round(n * 1e6) / 1e6; return r === 0 ? 0 : r; };
+
+test('addNode returns a fresh id not already in the document', () => {
+  const { doc: out, id } = edit.addNode(doc(), [3, 3]);
+  assert.deepEqual(out.nodes[id], [3, 3]);
+  assert.equal(Object.keys(out.nodes).length, 5);
+});
+
+test('addWall links two existing nodes', () => {
+  const { doc: out, id } = edit.addWall(doc(), 'a', 'c', 0.3, 'fence');
+  const w = out.walls.find(x => x.id === id);
+  assert.deepEqual([w.from, w.to, w.t, w.type], ['a', 'c', 0.3, 'fence']);
+});
+
+test('moveNode moves the shared node, so both walls follow', () => {
+  const out = edit.moveNode(doc(), 'b', [7, 1]);
+  assert.deepEqual(out.nodes.b, [7, 1]);
+  assert.deepEqual(out.walls.map(w => [w.from, w.to]), [['a', 'b'], ['b', 'c']]);
+});
+
+test('mergeNodes repoints walls onto the kept node and drops the other', () => {
+  const out = edit.mergeNodes(doc(), 'a', 'c');
+  assert.equal(out.nodes.c, undefined);
+  assert.deepEqual(out.walls.map(w => [w.from, w.to]), [['a', 'b'], ['b', 'a']]);
+});
+
+test('mergeNodes drops a wall left with both ends identical', () => {
+  const out = edit.mergeNodes(doc(), 'a', 'b');   // w1 was a->b
+  assert.deepEqual(out.walls.map(w => w.id), ['w2']);
+  assert.deepEqual(out.walls[0], { id: 'w2', from: 'a', to: 'c', t: 0.2, type: 'wall' });
+});
+
+test('splitWall replaces one wall with two sharing a new node', () => {
+  const { doc: out, nodeId, wallIds } = edit.splitWall(doc(), 'w1', [2, 0]);
+  assert.deepEqual(out.nodes[nodeId], [2, 0]);
+  assert.equal(out.walls.length, 3);
+  assert.equal(out.walls.find(w => w.id === 'w1'), undefined, 'the original is replaced');
+  const halves = out.walls.filter(w => wallIds.includes(w.id));
+  assert.deepEqual(halves.map(w => [w.from, w.to]), [['a', nodeId], [nodeId, 'b']]);
+  assert.ok(halves.every(w => w.t === 0.2 && w.type === 'wall'), 'halves inherit t and type');
+});
+
+test('setLength moves the far end and holds the anchor', () => {
+  const out = edit.setLength(doc(), 'w1', 10, 'from');   // w1 is a[0,0] -> b[5,0]
+  assert.deepEqual(out.nodes.a, [0, 0], 'anchor held');
+  assert.deepEqual(out.nodes.b.map(round), [10, 0], 'far end moved along the direction');
+});
+
+test('setLength anchored to the other end moves the opposite node', () => {
+  const out = edit.setLength(doc(), 'w1', 10, 'to');
+  assert.deepEqual(out.nodes.b, [5, 0], 'anchor held');
+  assert.deepEqual(out.nodes.a.map(round), [-5, 0]);
+});
+
+test('setLength moving a shared node drags its neighbour wall with it', () => {
+  const out = edit.setLength(doc(), 'w1', 10, 'from');
+  // w2 still runs b->c, and b moved, so w2 is now longer
+  const [bx, by] = out.nodes.b, [cx, cy] = out.nodes.c;
+  assert.equal(round(Math.hypot(cx - bx, cy - by)), round(Math.hypot(5 - 10, 5 - 0)));
+});
+
+test('geometry mutations never alter the input document', () => {
+  const d = doc(), before = JSON.stringify(d);
+  edit.addNode(d, [1, 1]); edit.addWall(d, 'a', 'c', 0.2, 'wall');
+  edit.moveNode(d, 'b', [9, 9]); edit.mergeNodes(d, 'a', 'c');
+  edit.splitWall(d, 'w1', [2, 0]); edit.setLength(d, 'w1', 3, 'from');
+  assert.equal(JSON.stringify(d), before);
+});
+
+test('every mutation leaves a document that still validates', () => {
+  let d = doc();
+  d = edit.addWall(d, 'a', 'c', 0.2, 'wall').doc;
+  d = edit.moveNode(d, 'b', [6, 1]);
+  d = edit.splitWall(d, 'w2', [5, 2]).doc;
+  d = edit.mergeNodes(d, 'a', 'c');
+  assert.deepEqual(layout.validate(edit.gcNodes(d)), []);
+});

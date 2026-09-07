@@ -631,7 +631,63 @@ App.edit = (() => {
     };
   }
 
-  return { gcNodes, deleteWalls, history };
+  let seq = 0;
+  const freshId = (obj, prefix) => { let id; do { id = prefix + (++seq).toString(36); } while (id in obj); return id; };
+
+  function addNode(doc, pt) {
+    const out = clone(doc), id = freshId(out.nodes, 'n');
+    out.nodes[id] = [pt[0], pt[1]];
+    return { doc: out, id };
+  }
+
+  function addWall(doc, fromId, toId, t, type) {
+    const out = clone(doc);
+    const taken = Object.fromEntries(out.walls.map(w => [w.id, true]));
+    const id = freshId(taken, 'w');
+    out.walls.push({ id, from: fromId, to: toId, t, type });
+    return { doc: out, id };
+  }
+
+  function moveNode(doc, id, pt) {
+    const out = clone(doc);
+    if (out.nodes[id]) out.nodes[id] = [pt[0], pt[1]];
+    return out;
+  }
+
+  // Joining two corners: every wall on the dropped node now points at the kept one.
+  // A wall whose two ends collapse onto the same node is no longer a wall.
+  function mergeNodes(doc, keepId, dropId) {
+    if (keepId === dropId) return clone(doc);
+    const out = clone(doc);
+    for (const w of out.walls) { if (w.from === dropId) w.from = keepId; if (w.to === dropId) w.to = keepId; }
+    out.walls = out.walls.filter(w => w.from !== w.to);
+    return gcNodes(out);
+  }
+
+  function splitWall(doc, wallId, pt) {
+    const src = doc.walls.find(w => w.id === wallId);
+    if (!src) return { doc: clone(doc), nodeId: null, wallIds: [] };
+    let { doc: out, id: nodeId } = addNode(doc, pt);
+    const a = addWall(out, src.from, nodeId, src.t, src.type); out = a.doc;
+    const b = addWall(out, nodeId, src.to, src.t, src.type); out = b.doc;
+    out.walls = out.walls.filter(w => w.id !== wallId);
+    return { doc: out, nodeId, wallIds: [a.id, b.id] };
+  }
+
+  // With shared nodes a length change must move exactly one end. The anchor stays put
+  // and the far end slides along the wall's current direction.
+  function setLength(doc, wallId, metres, anchor) {
+    const w = doc.walls.find(x => x.id === wallId);
+    if (!w || !(metres > 0)) return clone(doc);
+    const keepId = anchor === 'to' ? w.to : w.from, moveId = anchor === 'to' ? w.from : w.to;
+    const p = doc.nodes[keepId], q = doc.nodes[moveId];
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (!(len > 1e-9)) return clone(doc);
+    const ux = (q[0] - p[0]) / len, uy = (q[1] - p[1]) / len;
+    return moveNode(doc, moveId, [p[0] + ux * metres, p[1] + uy * metres]);
+  }
+
+  return { gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength };
 })();
 </script>
 
