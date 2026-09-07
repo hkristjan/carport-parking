@@ -294,7 +294,7 @@ App.registry = (() => {
     deck: { kind: 'item', solid: true, footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20, draw: (g, it, v) => {
       const w = 10.47, h = 1.76, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
       g.fillStyle = '#aeb3b8'; g.fillRect(v.px(x), v.px(y), v.px(w), v.px(h));
-      g.strokeStyle = 'rgba(60,66,70,.35)';
+      g.strokeStyle = 'rgba(60,66,70,.35)'; g.lineWidth = 1;
       for (let ly = y + 0.16; ly < y + h; ly += 0.16) { g.beginPath(); g.moveTo(v.px(x), v.px(ly)); g.lineTo(v.px(x + w), v.px(ly)); g.stroke(); }
     } }] },
     path:    { kind: 'area', solid: false, layers: [{ z: 25, fill: '#bfc4ca' }] },
