@@ -923,6 +923,13 @@ function snapAt(pt, e) {
 }
 ```
 
+> **Architecture note (ruling T6-R2):** the pure part of this belongs in `App.edit` as
+> `chainToDoc(doc, pts, snaps) -> doc`, with `commitChain` reduced to
+> `commit(App.edit.chainToDoc(doc, pts, snaps))`. All the guards below — the node-existence
+> check, the `splitWall` null fallback, the zero-length skip — are exactly the tricky logic
+> this phase keeps DOM-free and tested. Left in the main IIFE they are unreachable by the
+> harness, and a revert of any of them passes the suite silently.
+
 - [ ] **Step 4: Commit a chain into the document**
 
 ```js
