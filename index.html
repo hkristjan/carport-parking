@@ -273,6 +273,76 @@ App.geom = (() => {
 })();
 </script>
 
+<script data-ns="layout">
+globalThis.App = globalThis.App || {};
+App.layout = (() => {
+  'use strict';
+  const VERSION = 1;
+  const ARRAYS = ['walls', 'areas', 'items', 'bays', 'dims'];
+  const fin = n => typeof n === 'number' && Number.isFinite(n);
+  const isPt = p => Array.isArray(p) && p.length === 2 && fin(p[0]) && fin(p[1]);
+
+  function validate(doc) {
+    const e = [];
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return ['document must be an object'];
+    if (doc.v !== VERSION) e.push(`schema version must be ${VERSION}`);
+    if (!doc.plot || !fin(doc.plot.w) || !fin(doc.plot.h) || doc.plot.w <= 0 || doc.plot.h <= 0)
+      e.push('plot must have finite positive w and h');
+    if (!doc.nodes || typeof doc.nodes !== 'object') e.push('nodes must be an object');
+    for (const [id, p] of Object.entries(doc.nodes || {}))
+      if (!isPt(p)) e.push(`node ${id} must be a pair of finite numbers`);
+    for (const k of ARRAYS) if (!Array.isArray(doc[k])) e.push(`${k} must be an array`);
+
+    for (const w of doc.walls || []) {
+      const p = (doc.nodes || {})[w.from], q = (doc.nodes || {})[w.to];
+      if (!p) e.push(`wall ${w.id} references unknown node ${w.from}`);
+      if (!q) e.push(`wall ${w.id} references unknown node ${w.to}`);
+      if (!fin(w.t) || w.t <= 0) e.push(`wall ${w.id} thickness must be finite and > 0`);
+      if (p && q && Math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-6) e.push(`wall ${w.id} is zero-length`);
+      if (typeof w.type !== 'string') e.push(`wall ${w.id} needs a type`);
+    }
+    for (const a of doc.areas || []) {
+      if (!Array.isArray(a.poly) || a.poly.length < 3) e.push(`area ${a.id} needs at least 3 points`);
+      else for (const p of a.poly) if (!isPt(p)) e.push(`area ${a.id} has a non-finite point`);
+    }
+    for (const it of doc.items || []) {
+      if (!isPt(it.at)) e.push(`item ${it.id} position must be finite`);
+      if (!fin(it.a)) e.push(`item ${it.id} angle must be finite`);
+    }
+    for (const b of doc.bays || []) {
+      if (!Array.isArray(b.rect) || b.rect.length !== 4 || !b.rect.every(fin))
+        e.push(`bay ${b.id} rect must be four finite numbers`);
+      else if (b.rect[2] <= 0 || b.rect[3] <= 0) e.push(`bay ${b.id} must have positive size`);
+    }
+    for (const d of doc.dims || []) if (!isPt(d.from) || !isPt(d.to)) e.push('a dim has non-finite ends');
+    if (!doc.spawn || !isPt(doc.spawn.at) || !fin(doc.spawn.a)) e.push('spawn must be finite');
+    if (!doc.brief || !Array.isArray(doc.brief.targets) || !Array.isArray(doc.brief.vehicles))
+      e.push('brief needs targets and vehicles arrays');
+    return e;
+  }
+
+  const pack = doc => JSON.parse(JSON.stringify(doc));
+
+  function migrate(doc) { return doc; }   // no migrations yet; chain grows from v2
+
+  function unpack(json) {
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return { errors: ['document must be an object'] };
+    if (typeof json.v === 'number' && json.v > VERSION) return { errors: [`document is newer (v${json.v}) than this client (v${VERSION})`] };
+    const doc = migrate(pack(json));
+    const errors = validate(doc);
+    return errors.length ? { errors } : { doc };
+  }
+
+  const blank = name => ({
+    v: VERSION, id: 'lay_' + Math.random().toString(36).slice(2, 10), name: name || 'Untitled',
+    plot: { w: 20, h: 16 }, nodes: {}, walls: [], areas: [], items: [], bays: [], dims: [],
+    spawn: { at: [18, 14], a: Math.PI }, brief: { targets: [], vehicles: [], notes: '' },
+  });
+
+  return { VERSION, validate, pack, unpack, migrate, blank };
+})();
+</script>
+
 <script>
 (() => {
 'use strict';
