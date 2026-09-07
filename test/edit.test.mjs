@@ -15,7 +15,7 @@ const doc = () => Object.assign(layout.blank('t'), {
 // Carried over from Phase A's gap list: these two are the physics and click-selection
 // entry points, and the editor's hit-testing depends on the second.
 test('cornersOf places a vehicle box at its position and heading', () => {
-  const bb = geom.bboxOf(geom.cornersOf({ x: 5, y: 5, a: 0 }, { len: 4, wid: 2 }).map(c => c));
+  const bb = geom.bboxOf(geom.cornersOf({ x: 5, y: 5, a: 0 }, { len: 4, wid: 2 }));
   assert.deepEqual([bb.x, bb.y, bb.w, bb.h], [3, 4, 4, 2]);
 });
 
@@ -225,9 +225,10 @@ test('snap falls to a wall centreline when no node is near', () => {
   assert.deepEqual(s.pt.map(round), [5, 0], 'projected onto the centreline');
 });
 
-test('a point beyond a wall end does not snap to that wall', () => {
+test('a point beyond a wall end falls through to free, not to that wall', () => {
   const s = edit.snap(snapDoc(), [11, 0], { radius: 0.2, grid: 0 });
-  assert.notEqual(s.kind, 'wall');
+  assert.equal(s.kind, 'free', 'past an end is the node tier job, and b is out of radius');
+  assert.deepEqual(s.pt, [11, 0]);
 });
 
 test('snap falls to the grid when nothing else is near', () => {
@@ -398,4 +399,61 @@ test('clampNodes does not mutate its input document', () => {
   const before = JSON.stringify(d);
   edit.clampNodes(d);
   assert.equal(JSON.stringify(d), before);
+});
+
+// ---------- Guards the rest of the namespace leans on, and the defaults path
+test('splitWall with an unknown wall id reports nodeId null - the guard chainToDoc needs', () => {
+  const d = doc();
+  const r = edit.splitWall(d, 'nope', [2, 0]);
+  assert.equal(r.nodeId, null);
+  assert.deepEqual(r.wallIds, []);
+  assert.deepEqual(r.doc, d, 'an unchanged clone');
+  assert.notEqual(r.doc, d, 'a clone, not the input');
+});
+
+test('moveNode with an unknown node id returns an unchanged clone', () => {
+  const d = doc();
+  const out = edit.moveNode(d, 'nope', [1, 1]);
+  assert.deepEqual(out, d);
+  assert.notEqual(out, d);
+});
+
+test('addWall does not check its endpoints: a wall to a missing node fails validate', () => {
+  const d = doc();
+  const { doc: out, id } = edit.addWall(d, 'ghost', 'b', 0.2, 'wall');
+  assert.equal(out.walls.length, 3, 'the wall is added regardless');
+  assert.equal(out.walls[2].from, 'ghost');
+  // addWall is a low-level primitive; validation is layout.validate's job, and callers
+  // must not hand it node ids they have not created.
+  assert.deepEqual(layout.validate(out), ['wall ' + id + ' references unknown node ghost']);
+});
+
+test('setLength with an unknown wall id returns an unchanged clone', () => {
+  const d = doc();
+  const out = edit.setLength(d, 'nope', 3, 'from');
+  assert.deepEqual(out, d);
+  assert.notEqual(out, d);
+});
+
+test('mergeNodes with the same id twice is a no-op clone', () => {
+  const d = doc();
+  const out = edit.mergeNodes(d, 'a', 'a');
+  assert.deepEqual(out, d, 'the self-merge returns before any wall is repointed or GC runs');
+  assert.notEqual(out, d);
+});
+
+test('redo with an empty future returns null and does not push the current document', () => {
+  const h = edit.history();
+  const d = doc();
+  assert.equal(h.redo(d), null);
+  assert.equal(h.canUndo(), false, 'the current document must not have entered the past');
+  assert.equal(h.depth(), 0);
+});
+
+test('snap with opts omitted uses the documented defaults', () => {
+  const d = snapDoc();
+  assert.deepEqual(edit.snap(d, [3.42, 7.61]), { pt: [3.5, 7.5], kind: 'grid' }, 'grid 0.5');
+  const n = edit.snap(d, [0.1, 0.05]);
+  assert.equal(n.kind, 'node', 'radius 0.2, and snapping is enabled by default');
+  assert.equal(n.nodeId, 'a');
 });
