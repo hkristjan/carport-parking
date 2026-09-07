@@ -273,6 +273,31 @@ App.geom = (() => {
 })();
 </script>
 
+<script data-ns="registry">
+globalThis.App = globalThis.App || {};
+App.registry = (() => {
+  'use strict';
+  // Vehicles paint in the middle of the scene, not on top: the carport floor and bay
+  // outlines go under them, the slatted roof, palms and dimension lines over them.
+  const VEHICLE_Z = 50, BAY_Z = 35, DIM_Z = 80;
+  const types = {
+    ground:  { kind: 'area', solid: false, layers: [{ z: 0,  fill: '#f8f9fa' }] },
+    street:  { kind: 'area', solid: false, layers: [{ z: 5,  fill: '#e9ebee' }] },
+    deck:    { kind: 'item', solid: true,  footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20 }] },
+    path:    { kind: 'area', solid: false, layers: [{ z: 25, fill: '#bfc4ca' }] },
+    apron:   { kind: 'area', solid: false, layers: [{ z: 26, fill: '#c9cdd3' }] },
+    carport: { kind: 'item', solid: false, layers: [{ z: 30 }, { z: 60 }] },
+    wall:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#a3a8ae' }] },
+    frame:   { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#2c3335' }] },
+    post:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#2c3335' }] },
+    curb:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#8f949a' }] },
+    fence:   { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#3a4144' }] },
+    palm:    { kind: 'item', solid: false, layers: [{ z: 70 }] },
+  };
+  return { VEHICLE_Z, BAY_Z, DIM_Z, types, get: t => types[t] || null };
+})();
+</script>
+
 <script data-ns="layout">
 globalThis.App = globalThis.App || {};
 App.layout = (() => {
@@ -353,6 +378,67 @@ App.layout = (() => {
   });
 
   return { VERSION, validate, pack, unpack, migrate, blank };
+})();
+</script>
+
+<script data-ns="defaults">
+globalThis.App = globalThis.App || {};
+App.defaults = (() => {
+  'use strict';
+  // Today's hardcoded carport, converted once. An inline literal, never a fetched
+  // .json file: fetch() is CORS-blocked over file:// and the app must open by
+  // double-clicking index.html.
+  const carport = {
+    v: 1, id: 'lay_carport', name: 'Carport',
+    plot: { w: 18.6, h: 15.6 },
+    nodes: {
+      a1: [2.36, 0], a2: [2.36, 11.35],           // boundary wall, t 0.22
+      b1: [2.55, 3.78], b2: [10.50, 3.78],        // carport back beam, t 0.42
+      c1: [2.60, 3.99], c2: [2.60, 9.64],         // carport left side, t 0.10
+      d1: [10.45, 3.99], d2: [10.45, 6.19],       // right post, t 0.10
+      e1: [10.45, 7.45], e2: [10.45, 9.65],       // right post, t 0.10
+      f1: [2.50, 11.29], f2: [4.50, 11.29],       // kerb, t 0.12
+      g1: [10.90, 11.52], g2: [18.60, 11.52],     // street fence, t 0.14
+      h1: [0, 15.38], h2: [18.60, 15.38],         // south boundary fence, t 0.16
+    },
+    walls: [
+      { id: 'w1', from: 'a1', to: 'a2', t: 0.22, type: 'wall' },
+      { id: 'w2', from: 'b1', to: 'b2', t: 0.42, type: 'frame' },
+      { id: 'w3', from: 'c1', to: 'c2', t: 0.10, type: 'frame' },
+      { id: 'w4', from: 'd1', to: 'd2', t: 0.10, type: 'post' },
+      { id: 'w5', from: 'e1', to: 'e2', t: 0.10, type: 'post' },
+      { id: 'w6', from: 'f1', to: 'f2', t: 0.12, type: 'curb' },
+      { id: 'w7', from: 'g1', to: 'g2', t: 0.14, type: 'fence' },
+      { id: 'w8', from: 'h1', to: 'h2', t: 0.16, type: 'fence' },
+    ],
+    areas: [
+      { id: 'ar0', type: 'ground', poly: [[0, 0], [18.6, 0], [18.6, 15.6], [0, 15.6]] },
+      { id: 'ar1', type: 'street', poly: [[0, 11.6], [18.6, 11.6], [18.6, 15.6], [0, 15.6]] },
+      { id: 'ar2', type: 'path',   poly: [[8.13, 1.76], [10.53, 1.76], [10.53, 3.57], [8.13, 3.57]] },
+      { id: 'ar3', type: 'apron',  poly: [[2.55, 9.65], [10.50, 9.65], [10.50, 11.23], [2.55, 11.23]] },
+    ],
+    items: [
+      { id: 'it1', type: 'deck',    at: [13.365, 0.88], a: 0 },
+      { id: 'it2', type: 'carport', at: [6.525, 6.61],  a: 0 },
+      { id: 'it3', type: 'palm',    at: [13.1, 1.4],    a: 0 },
+      { id: 'it4', type: 'palm',    at: [16.7, 1.4],    a: 0 },
+    ],
+    bays: [
+      { id: 'bay1', rect: [2.70, 4.05, 2.55, 5.55], a: 0, label: 'Bay 1' },
+      { id: 'bay2', rect: [5.25, 4.05, 2.55, 5.55], a: 0, label: 'Bay 2' },
+      { id: 'bay3', rect: [7.80, 4.05, 2.55, 5.55], a: 0, label: 'Bay 3' },
+    ],
+    dims: [
+      { from: [2.55, 2.10],  to: [10.50, 2.10],  label: '7,98 m' },
+      { from: [8.13, 2.90],  to: [10.53, 2.90],  label: '2,40 m' },
+      { from: [2.60, 11.95], to: [4.60, 11.95],  label: '2,00 m' },
+      { from: [4.60, 11.95], to: [10.60, 11.95], label: '6,00 m' },
+      { from: [8.13, 1.35],  to: [18.60, 1.35],  label: '12,73 m' },
+    ],
+    spawn: { at: [16.4, 14.05], a: Math.PI },
+    brief: { targets: [], vehicles: [], notes: '' },
+  };
+  return { carport };
 })();
 </script>
 
