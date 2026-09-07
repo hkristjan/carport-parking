@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { loadApp } from './extract.mjs';
 
 const { geom, layout, registry, defaults } = loadApp();
@@ -86,4 +87,11 @@ test('pack/unpack round-trips the default layout', () => {
   const back = layout.unpack(layout.pack(defaults.carport));
   assert.ok(back.doc, JSON.stringify(back.errors));
   assert.deepEqual(back.doc, defaults.carport);
+});
+
+test('the main script no longer declares world literals', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const main = html.slice(html.lastIndexOf('<script>'));
+  for (const name of ['staticObstacles', 'const palms', 'const apron', 'const carport'])
+    assert.ok(!main.includes(name), `${name} still present in the main script`);
 });

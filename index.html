@@ -291,16 +291,48 @@ App.registry = (() => {
       const ys = a.poly.map(p => p[1]), mid = Math.min(...ys) + 1.85;
       for (let x = Math.min(...xs) + 0.5; x < x1; x += 1.2) { g.beginPath(); g.moveTo(v.px(x), v.px(mid)); g.lineTo(v.px(x + 0.6), v.px(mid)); g.stroke(); }
     } }] },
-    deck:    { kind: 'item', solid: true,  footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20 }] },
+    deck: { kind: 'item', solid: true, footprint: { w: 10.47, h: 1.76 }, layers: [{ z: 20, draw: (g, it, v) => {
+      const w = 10.47, h = 1.76, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+      g.fillStyle = '#aeb3b8'; g.fillRect(v.px(x), v.px(y), v.px(w), v.px(h));
+      g.strokeStyle = 'rgba(60,66,70,.35)';
+      for (let ly = y + 0.16; ly < y + h; ly += 0.16) { g.beginPath(); g.moveTo(v.px(x), v.px(ly)); g.lineTo(v.px(x + w), v.px(ly)); g.stroke(); }
+    } }] },
     path:    { kind: 'area', solid: false, layers: [{ z: 25, fill: '#bfc4ca' }] },
     apron:   { kind: 'area', solid: false, layers: [{ z: 26, fill: '#c9cdd3' }] },
-    carport: { kind: 'item', solid: false, layers: [{ z: 30 }, { z: 60 }] },
+    carport: { kind: 'item', solid: false, layers: [
+      { z: 30, draw: (g, it, v) => {                      // floor, under the cars
+        const w = 7.95, h = 6.08, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+        g.fillStyle = '#e6e8eb'; g.fillRect(v.px(x), v.px(y + 0.42), v.px(w), v.px(h - 0.42));
+      } },
+      { z: 60, draw: (g, it, v) => {                      // slats and shadow, over them
+        const w = 7.95, h = 6.08, x = it.at[0] - w / 2, y = it.at[1] - h / 2;
+        g.save(); g.beginPath(); g.rect(v.px(x), v.px(y + 0.42), v.px(w), v.px(h - 0.9)); g.clip();
+        g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, v.px(0.045));
+        for (let sx = x + 0.1; sx < x + w; sx += 0.1) { g.beginPath(); g.moveTo(v.px(sx), v.px(y)); g.lineTo(v.px(sx), v.px(y + h)); g.stroke(); }
+        g.restore();
+        g.fillStyle = 'rgba(44,51,53,.92)'; g.fillRect(v.px(x), v.px(y + h - 0.48), v.px(w), v.px(0.48));
+      } },
+    ] },
     wall:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#a3a8ae' }] },
     frame:   { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#2c3335' }] },
     post:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#2c3335' }] },
     curb:    { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#8f949a' }] },
     fence:   { kind: 'wall', solid: true,  layers: [{ z: 40, stroke: '#3a4144' }] },
-    palm:    { kind: 'item', solid: false, layers: [{ z: 70 }] },
+    palm: { kind: 'item', solid: false, layers: [{ z: 70, draw: (g, it, v) => {
+      const [x, y] = it.at;
+      g.strokeStyle = '#4f8a3a'; g.lineWidth = Math.max(1.5, v.px(0.07)); g.lineCap = 'round';
+      for (let i = 0; i < 9; i++) { const a = i * Math.PI * 2 / 9 + 0.3; g.beginPath(); g.moveTo(v.px(x), v.px(y)); g.quadraticCurveTo(v.px(x + Math.cos(a) * 0.5), v.px(y + Math.sin(a) * 0.5 - 0.1), v.px(x + Math.cos(a) * 1.05), v.px(y + Math.sin(a) * 1.05)); g.stroke(); }
+      g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(v.px(x), v.px(y), v.px(0.16), 0, Math.PI * 2); g.fill();
+    } }] },
+    fenceposts: { kind: 'item', solid: false, layers: [{ z: 41, draw: (g, it, v) => {
+      const [x0, y] = it.at, span = it.span || 18.6;
+      g.fillStyle = '#2c3335';
+      for (let x = x0; x < x0 + span; x += 2.0) g.fillRect(v.px(x) - v.px(0.08), v.px(y), v.px(0.16), v.px(0.32));
+    } }] },
+    walltrim: { kind: 'item', solid: false, layers: [{ z: 41, draw: (g, it, v) => {
+      g.fillStyle = '#8a8f95';
+      g.fillRect(v.px(it.at[0]), v.px(it.at[1]), v.px(it.w || 0.06), v.px(it.h || 11.35));
+    } }] },
   };
   return { VEHICLE_Z, BAY_Z, DIM_Z, types, get: t => types[t] || null };
 })();
@@ -430,6 +462,8 @@ App.defaults = (() => {
       { id: 'it2', type: 'carport', at: [6.525, 6.61],  a: 0 },
       { id: 'it3', type: 'palm',    at: [13.1, 1.4],    a: 0 },
       { id: 'it4', type: 'palm',    at: [16.7, 1.4],    a: 0 },
+      { id: 'it5', type: 'fenceposts', at: [0.4, 15.22], a: 0, span: 18.6 },
+      { id: 'it6', type: 'walltrim',   at: [2.25, 0],    a: 0, w: 0.06, h: 11.35 },
     ],
     bays: [
       { id: 'bay1', rect: [2.70, 4.05, 2.55, 5.55], a: 0, label: 'Bay 1' },
@@ -552,31 +586,6 @@ const swatchBox = $('swatches');
 const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.querySelector('.hud');
 const wheelEl = $('wheel'), modeArrows = $('modeArrows'), modeWheel = $('modeWheel');
 const ctrlEls = [...document.querySelectorAll('.pad, .pedals, .wheel')];   // every on-screen control cluster
-
-// ---------- World: metres, origin at the top-left of the reference plan (91 px = 1 m in the source image)
-const W = 18.6, H = 15.6;
-const staticObstacles = [
-  { x: 2.25, y: 0.00, w: 0.22, h: 11.35, kind: 'wall' },      // boundary wall on the left
-  { x: 8.13, y: 0.00, w: 10.47, h: 1.76, kind: 'deck' },      // wooden deck, 12,73 m
-  { x: 2.55, y: 3.57, w: 7.95, h: 0.42, kind: 'frame' },      // carport back beam
-  { x: 2.55, y: 3.99, w: 0.10, h: 5.65, kind: 'frame' },      // left side of the carport
-  { x: 10.40, y: 3.99, w: 0.10, h: 2.20, kind: 'post' },      // right side posts
-  { x: 10.40, y: 7.45, w: 0.10, h: 2.20, kind: 'post' },
-  { x: 2.50, y: 11.23, w: 2.00, h: 0.12, kind: 'curb' },      // kerb, 2,00 m
-  { x: 10.90, y: 11.45, w: 7.70, h: 0.14, kind: 'fence' },    // low fence along the street
-  { x: 0.00, y: 15.30, w: W,    h: 0.16, kind: 'fence' },     // south boundary fence
-];
-const bounds = [
-  { x: -1, y: -1, w: W + 2, h: 1 }, { x: -1, y: H, w: W + 2, h: 1 },
-  { x: -1, y: -1, w: 1, h: H + 2 }, { x: W, y: -1, w: 1, h: H + 2 },
-];
-const bays = [
-  { x: 2.70, y: 4.05, w: 2.55, h: 5.55 }, { x: 5.25, y: 4.05, w: 2.55, h: 5.55 }, { x: 7.80, y: 4.05, w: 2.55, h: 5.55 },
-];
-const palms = [[13.1, 1.4], [16.7, 1.4]];
-const apron = { x: 2.55, y: 9.65, w: 7.95, h: 1.58 };
-const path  = { x: 8.13, y: 1.76, w: 2.40, h: 1.81 };
-const carport = { x: 2.55, y: 3.57, w: 7.95, h: 6.08 };
 
 // ---------- Models (metres; length, width without mirrors, wheelbase, kerb-to-kerb turning circle)
 const models = [
@@ -756,8 +765,9 @@ function fit() {
     if (ctrlTop < VH) bottom = (VH - ctrlTop) + 10;
   }
   const availH = Math.max(140, VH - top - bottom);
-  S = Math.min(VW / W, availH / H) * 0.94;
-  OX = (VW - W * S) / 2; OY = top + (availH - H * S) / 2;
+  const { w: PW, h: PH } = world.extent;
+  S = Math.min(VW / PW, availH / PH) * 0.94;
+  OX = (VW - PW * S) / 2; OY = top + (availH - PH * S) / 2;
 }
 addEventListener('resize', fit);
 addEventListener('orientationchange', () => setTimeout(fit, 150));
@@ -904,26 +914,27 @@ function drawRun(run, stroke) {
   run.points.forEach(([x, y], i) => i ? g.lineTo(px(x), px(y)) : g.moveTo(px(x), px(y)));
   g.stroke();
 }
-// Paint every drawList entry whose z falls in [from, to). Vehicles are painted
-// between the two calls, because today's scene draws its carport roof and palms
-// over the cars but its floor and bay outlines under them.
+// One z-ordered queue. drawList entries, wall runs, bay outlines and dimension lines all
+// compete for the same paint order, so they must be merged and sorted: painting them as
+// separate groups honours z only WITHIN each group, which silently inverts pairs such as
+// the fence (a run at z 40) against the fence posts (an item at z 41).
 function paintList(from, to) {
-  g.save();
-  for (const d of world.drawList) {
-    if (d.z < from || d.z >= to) continue;
-    if (d.kind === 'area' && d.layer.fill) drawArea(d.obj.poly, d.layer.fill);
-    else if (d.layer.draw) d.layer.draw(g, d.obj, { px });
-  }
-  // walls stroke per run rather than per wall, so they are painted from world.runs
-  // instead of drawList. Each run carries the z its type declared.
-  for (const run of world.runs) if (run.z >= from && run.z < to) drawRun(run, run.stroke);
   const { BAY_Z, DIM_Z } = App.registry;
-  if (BAY_Z >= from && BAY_Z < to) {
+  const ops = [];
+  for (const d of world.drawList) {
+    if (d.kind === 'area' && d.layer.fill) ops.push([d.z, () => drawArea(d.obj.poly, d.layer.fill)]);
+    else if (d.layer.draw) ops.push([d.z, () => d.layer.draw(g, d.obj, { px })]);
+  }
+  for (const run of world.runs) ops.push([run.z, () => drawRun(run, run.stroke)]);
+  ops.push([BAY_Z, () => {
     g.save(); g.setLineDash([px(0.22), px(0.14)]); g.strokeStyle = 'rgba(46,53,56,.45)'; g.lineWidth = Math.max(1, px(0.04));
     for (const b of world.bays) g.strokeRect(px(b.rect[0]), px(b.rect[1]), px(b.rect[2]), px(b.rect[3]));
     g.restore();
-  }
-  if (DIM_Z >= from && DIM_Z < to) for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label);
+  }]);
+  ops.push([DIM_Z, () => { for (const d of world.dims) drawDim(d.from[0], d.from[1], d.to[0], d.to[1], d.label); }]);
+  ops.sort((a, b) => a[0] - b[0]);          // stable: same-z walls keep document order
+  g.save();                                 // never leak lineWidth/strokeStyle/lineDash out
+  for (const [z, fn] of ops) if (z >= from && z < to) fn();
   g.restore();
 }
 
@@ -934,35 +945,9 @@ function draw() {
   g.translate(OX, OY);
   paintList(0, App.registry.VEHICLE_Z);
 
-  const deck = staticObstacles[1];
-  rect(deck, '#aeb3b8');
-  g.strokeStyle = 'rgba(60,66,70,.35)';
-  g.lineWidth = 1;
-  for (let y = deck.y + 0.16; y < deck.y + deck.h; y += 0.16) { g.beginPath(); g.moveTo(px(deck.x), px(y)); g.lineTo(px(deck.x + deck.w), px(y)); g.stroke(); }
-
-  rect({ x: carport.x, y: carport.y + 0.42, w: carport.w, h: carport.h - 0.42 }, '#e6e8eb');
-
-  // fence posts on the south boundary
-  g.fillStyle = '#2c3335';
-  for (let x = 0.4; x < W; x += 2.0) g.fillRect(px(x) - px(0.08), px(15.22), px(0.16), px(0.32));
-  rect({ x: 2.25, y: 0, w: 0.06, h: 11.35 }, '#8a8f95');
-
   for (const v of vehicles) if (v !== active) drawVehicle(v, false);
   if (active) drawVehicle(active, true);
   paintList(App.registry.VEHICLE_Z, Infinity);
-
-  g.save(); g.beginPath(); g.rect(px(carport.x), px(carport.y + 0.42), px(carport.w), px(carport.h - 0.9)); g.clip();
-  g.strokeStyle = 'rgba(44,51,53,.55)'; g.lineWidth = Math.max(1, px(0.045));
-  for (let x = carport.x + 0.1; x < carport.x + carport.w; x += 0.1) { g.beginPath(); g.moveTo(px(x), px(carport.y)); g.lineTo(px(x), px(carport.y + carport.h)); g.stroke(); }
-  g.restore();
-  rect({ x: carport.x, y: carport.y + carport.h - 0.48, w: carport.w, h: 0.48 }, 'rgba(44,51,53,.92)');
-
-  for (const [x, y] of palms) {
-    g.strokeStyle = '#4f8a3a'; g.lineWidth = Math.max(1.5, px(0.07)); g.lineCap = 'round';
-    for (let i = 0; i < 9; i++) { const a = i * Math.PI * 2 / 9 + 0.3; g.beginPath(); g.moveTo(px(x), px(y)); g.quadraticCurveTo(px(x + Math.cos(a) * 0.5), px(y + Math.sin(a) * 0.5 - 0.1), px(x + Math.cos(a) * 1.05), px(y + Math.sin(a) * 1.05)); g.stroke(); }
-    g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(px(x), px(y), px(0.16), 0, Math.PI * 2); g.fill();
-  }
-
 }
 
 // ---------- HUD + loop
