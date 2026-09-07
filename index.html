@@ -697,7 +697,55 @@ App.edit = (() => {
     return moveNode(doc, moveId, [p[0] + ux * metres, p[1] + uy * metres]);
   }
 
-  return { gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength };
+  // Priority: an existing node (the merge case) beats a wall centreline (the split
+  // case) beats the grid beats an angle constraint. The radius is a WORLD distance the
+  // caller derives from screen pixels, so the feel does not change with zoom.
+  function snap(doc, pt, opts) {
+    const o = Object.assign({ radius: 0.2, grid: 0.5, from: null, angleStep: 15, enabled: true }, opts);
+    if (!o.enabled) return { pt: [pt[0], pt[1]], kind: 'free' };
+
+    let best = null;
+    for (const [id, n] of Object.entries(doc.nodes)) {
+      const d = Math.hypot(n[0] - pt[0], n[1] - pt[1]);
+      if (d <= o.radius && (!best || d < best.d)) best = { d, pt: [n[0], n[1]], kind: 'node', nodeId: id };
+    }
+    if (best) return { pt: best.pt, kind: best.kind, nodeId: best.nodeId };
+
+    for (const w of doc.walls) {
+      const p = doc.nodes[w.from], q = doc.nodes[w.to];
+      if (!p || !q) continue;
+      const vx = q[0] - p[0], vy = q[1] - p[1], L2 = vx * vx + vy * vy;
+      if (L2 < 1e-12) continue;
+      const t = ((pt[0] - p[0]) * vx + (pt[1] - p[1]) * vy) / L2;
+      if (t <= 0 || t >= 1) continue;                       // past an end is the node's job
+      const cx = p[0] + vx * t, cy = p[1] + vy * t;
+      const d = Math.hypot(cx - pt[0], cy - pt[1]);
+      if (d <= o.radius && (!best || d < best.d)) best = { d, pt: [cx, cy], kind: 'wall', wallId: w.id };
+    }
+    if (best) return { pt: best.pt, kind: best.kind, wallId: best.wallId };
+
+    if (o.grid > 0) {
+      const gx = Math.round(pt[0] / o.grid) * o.grid, gy = Math.round(pt[1] / o.grid) * o.grid;
+      if (Math.hypot(gx - pt[0], gy - pt[1]) <= o.grid / 2) return { pt: [gx, gy], kind: 'grid' };
+    }
+
+    if (o.from && o.angleStep > 0) {
+      const dx = pt[0] - o.from[0], dy = pt[1] - o.from[1], len = Math.hypot(dx, dy);
+      if (len > 1e-9) {
+        const step = o.angleStep * Math.PI / 180;
+        const a = Math.round(Math.atan2(dy, dx) / step) * step;
+        return { pt: [o.from[0] + Math.cos(a) * len, o.from[1] + Math.sin(a) * len], kind: 'angle' };
+      }
+    }
+    return { pt: [pt[0], pt[1]], kind: 'free' };
+  }
+
+  const clampPt = (doc, pt) => [
+    Math.min(doc.plot.w, Math.max(0, pt[0])),
+    Math.min(doc.plot.h, Math.max(0, pt[1])),
+  ];
+
+  return { gcNodes, deleteWalls, history, addNode, addWall, moveNode, mergeNodes, splitWall, setLength, snap, clampPt };
 })();
 </script>
 

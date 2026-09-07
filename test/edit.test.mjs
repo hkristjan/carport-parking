@@ -205,3 +205,64 @@ test('mergeNodes collapses two walls that end up spanning the same node pair', (
   assert.equal(c.runs.length, 1, 'the surviving wall must compile to a single run');
   assert.equal(c.solids.length, 1, 'the surviving wall must compile to a single solid');
 });
+
+const snapDoc = () => Object.assign(layout.blank('t'), {
+  nodes: { a: [0, 0], b: [10, 0] },
+  walls: [{ id: 'w1', from: 'a', to: 'b', t: 0.2, type: 'wall' }],
+});
+
+test('snap prefers an existing node within the radius', () => {
+  const s = edit.snap(snapDoc(), [0.05, 0.05], { radius: 0.2 });
+  assert.equal(s.kind, 'node');
+  assert.equal(s.nodeId, 'a');
+  assert.deepEqual(s.pt, [0, 0]);
+});
+
+test('snap falls to a wall centreline when no node is near', () => {
+  const s = edit.snap(snapDoc(), [5, 0.05], { radius: 0.2 });
+  assert.equal(s.kind, 'wall');
+  assert.equal(s.wallId, 'w1');
+  assert.deepEqual(s.pt.map(round), [5, 0], 'projected onto the centreline');
+});
+
+test('a point beyond a wall end does not snap to that wall', () => {
+  const s = edit.snap(snapDoc(), [11, 0], { radius: 0.2, grid: 0 });
+  assert.notEqual(s.kind, 'wall');
+});
+
+test('snap falls to the grid when nothing else is near', () => {
+  const s = edit.snap(snapDoc(), [3.42, 7.61], { radius: 0.2, grid: 0.5 });
+  assert.equal(s.kind, 'grid');
+  assert.deepEqual(s.pt, [3.5, 7.5]);
+});
+
+test('angle snapping constrains to 15 degree increments from the previous point', () => {
+  const s = edit.snap(snapDoc(), [4, 0.3], { radius: 0.01, grid: 0, from: [0, 0], angleStep: 15 });
+  assert.equal(s.kind, 'angle');
+  assert.equal(round(s.pt[1]), 0, 'nearest increment to ~4 degrees is 0');
+  assert.equal(round(s.pt[0]), round(Math.hypot(4, 0.3)), 'length preserved along the snapped ray');
+});
+
+test('angle snapping picks 45 degrees when that is nearest', () => {
+  const s = edit.snap(snapDoc(), [3, 3.2], { radius: 0.01, grid: 0, from: [0, 0], angleStep: 15 });
+  const len = Math.hypot(3, 3.2);
+  assert.equal(round(s.pt[0]), round(len * Math.cos(Math.PI / 4)));
+  assert.equal(round(s.pt[1]), round(len * Math.sin(Math.PI / 4)));
+});
+
+test('disabled snapping returns the raw point', () => {
+  const s = edit.snap(snapDoc(), [0.05, 0.05], { radius: 0.2, enabled: false });
+  assert.equal(s.kind, 'free');
+  assert.deepEqual(s.pt, [0.05, 0.05]);
+});
+
+test('clampPt holds a point inside the plot', () => {
+  const d = snapDoc();                      // blank() gives plot 20 x 16
+  assert.deepEqual(edit.clampPt(d, [-3, 20]), [0, 16]);
+  assert.deepEqual(edit.clampPt(d, [5, 5]), [5, 5], 'an interior point is untouched');
+});
+
+test('snap never returns a non-finite point', () => {
+  for (const p of [[0, 0], [5, 0], [3.42, 7.61], [1e6, -1e6]])
+    assert.ok(edit.snap(snapDoc(), p, { radius: 0.2, from: [0, 0] }).pt.every(Number.isFinite));
+});
