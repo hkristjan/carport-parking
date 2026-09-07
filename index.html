@@ -977,6 +977,7 @@ let draft = null;      // { pts: [[x,y], …], snaps: [<snap result>, …] }
 let hoverSnap = null;
 let pressAt = null;
 const DRAG_MIN = 0.1;  // metres: below this a release is a click, not a drag
+let drag = null, dragSnap = null;
 
 function setTool(t) {
   tool = t; draft = null;
@@ -1125,13 +1126,46 @@ function wallPointerUp(e) {
   draft.pts.push(s.pt); draft.snaps.push(s);
   endChain();                               // a drag: one wall, done
 }
-cv.addEventListener('pointerup', wallPointerUp);
-cv.addEventListener('pointercancel', wallPointerUp);
-cv.addEventListener('lostpointercapture', wallPointerUp);
+// A node drag drops onto another node to merge them; a wall drag just relocates both
+// ends. Either way the whole gesture is one undo entry: replay drag.orig (undoing the
+// live preview's mutations without a snapshot) then commit the final doc once.
+const endDrag = e => {
+  if (!drag) return;
+  const pt = toWorld(e.clientX, e.clientY);
+  let next = doc;
+  if (drag.kind === 'node') {
+    const s = App.edit.snap(drag.orig, pt, { radius: 10 / view.scale, grid: 0, enabled: !e.altKey });
+    if (s.kind === 'node' && s.nodeId !== drag.id) next = App.edit.mergeNodes(doc, s.nodeId, drag.id);
+  }
+  const moved = JSON.stringify(next) !== JSON.stringify(drag.orig);
+  const orig = drag.orig;
+  drag = null; dragSnap = null;
+  if (!moved) return;
+  // one snapshot per drag, taken from where the drag began
+  replaceDoc(orig); commit(next);
+};
+cv.addEventListener('pointerup', e => { wallPointerUp(e); endDrag(e); });
+cv.addEventListener('pointercancel', e => { wallPointerUp(e); endDrag(e); });
+cv.addEventListener('lostpointercapture', e => { wallPointerUp(e); endDrag(e); });
 
 cv.addEventListener('pointermove', e => {
   if (!isBuild()) return;
   const pt = toWorld(e.clientX, e.clientY);
+  if (drag) {
+    const s = snapAt(pt, e);
+    let next = drag.orig;
+    if (drag.kind === 'node') next = App.edit.moveNode(drag.orig, drag.id, s.pt);
+    else {
+      const w = drag.orig.walls.find(x => x.id === drag.id);
+      const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1];
+      const p = drag.orig.nodes[w.from], q = drag.orig.nodes[w.to];
+      next = App.edit.moveNode(drag.orig, w.from, [p[0] + dx, p[1] + dy]);
+      next = App.edit.moveNode(next, w.to, [q[0] + dx, q[1] + dy]);
+    }
+    replaceDoc(next);          // live preview: recompile, but no undo snapshot yet
+    dragSnap = drag.kind === 'node' ? s : null;
+    return;
+  }
   hoverSnap = tool === 'wall' ? snapAt(pt, e) : null;
 });
 cv.addEventListener('dblclick', () => { if (isBuild() && tool === 'wall') endChain(); });
@@ -1176,6 +1210,9 @@ function editorPointerDown(e, pt) {
     selection = add ? { walls: [...new Set([...selection.walls, hit.wallId])], nodes: selection.nodes }
                     : { walls: [hit.wallId], nodes: [] };
   } else if (!add) selection = { walls: [], nodes: [] };
+  if (hit.nodeId) drag = { kind: 'node', id: hit.nodeId, start: pt, orig: JSON.parse(JSON.stringify(doc)) };
+  else if (hit.wallId) drag = { kind: 'wall', id: hit.wallId, start: pt, orig: JSON.parse(JSON.stringify(doc)) };
+  if (drag) cv.setPointerCapture(e.pointerId);
 }
 
 // ---------- The side panel becomes a bottom sheet on small screens
