@@ -1,0 +1,4 @@
+# Harness scratch: worktrees and subagent-driven-development workspaces.
+# Both hold throwaway artifacts (ledgers, briefs, review packages) — never source.
+.claude/worktrees/
+.superpowers/
