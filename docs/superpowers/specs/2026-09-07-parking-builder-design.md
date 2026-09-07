@@ -303,7 +303,7 @@ Conversion is per-kind and hand-checked once:
 | `carport` | item with a bespoke renderer (slats, shadow band, clip) |
 | `palms` | items |
 | `bays` | bays |
-| 6 `drawDim` calls | dims |
+| 5 `drawDim` calls | dims |
 | `W`, `H` | `plot` |
 | spawn at 16.4/14.05 | `spawn` |
 
@@ -354,7 +354,7 @@ script, `node --check`, then open the page and drive it.
 ## Out of scope
 
 - **Transport for sharing.** Server-backed, later. This design stops at `pack`/`unpack`.
-- **Dimension authoring.** `dims` are in the schema and rendered, so today's six
+- **Dimension authoring.** `dims` are in the schema and rendered, so today's five
   survive migration, but no tool creates them in the MVP.
 - **Touch editing.** Desktop builds, mobile drives.
 - **Area and item tools.** Registry contract and type list only.
