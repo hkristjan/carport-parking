@@ -530,6 +530,12 @@ App.compile = (() => {
 (() => {
 'use strict';
 const { cornersOf, rectCorners, collide, pointInVehicle } = App.geom;
+// The layout document is the only source of truth; everything below reads `world`.
+const loaded = App.layout.unpack(App.defaults.carport);
+if (loaded.errors) throw new Error('default layout is invalid: ' + loaded.errors.join('; '));
+const doc = loaded.doc;
+let world = App.compile(doc);
+if (world.warnings.length) console.warn('layout warnings:', world.warnings);
 // ---------- DOM
 const $ = id => document.getElementById(id);
 const hitsEl = $('hits'), timeEl = $('time'), speedEl = $('speed'), vehicleEl = $('vehicle'), dimHits = $('dimHits');
@@ -613,10 +619,10 @@ const state = { hits: 0, t: 0, hitCooldown: 0, contact: false, flash: 0 };
 
 // spawn at the east end of the street, facing west; slide west if that spot is taken
 function addVehicle(spec) {
-  const v = { x: 16.4, y: 14.05, a: Math.PI, v: 0, steer: 0, spec, paint: paints[0] };
+  const v = { x: world.spawn.at[0], y: world.spawn.at[1], a: world.spawn.a, v: 0, steer: 0, spec, paint: paints[0] };
   for (let tries = 0; tries < 12; tries++) {
     const c = cornersOf(v, spec);
-    const blocked = vehicles.some(o => collide(c, v.a, cornersOf(o, o.spec), o.a)) || staticObstacles.some(r => collide(c, v.a, rectCorners(r), 0));
+    const blocked = vehicles.some(o => collide(c, v.a, cornersOf(o, o.spec), o.a)) || world.solids.some(s => collide(c, v.a, s.corners, s.a));
     if (!blocked) break;
     v.x -= 0.9;
   }
@@ -696,7 +702,7 @@ function step(dt) {
   let hitNow = false;
   for (let i = 0; i < 3; i++) {
     const A = cornersOf(car, spec); let any = false;
-    const targets = [...[...staticObstacles, ...bounds].map(r => [rectCorners(r), 0]), ...vehicles.filter(o => o !== car).map(o => [cornersOf(o, o.spec), o.a])];
+    const targets = [...world.solids.map(s => [s.corners, s.a]), ...world.bounds.map(r => [rectCorners(r), 0]), ...vehicles.filter(o => o !== car).map(o => [cornersOf(o, o.spec), o.a])];
     for (const [B, aB] of targets) {
       const m = collide(A, car.a, B, aB); if (!m) continue;
       any = hitNow = true;
