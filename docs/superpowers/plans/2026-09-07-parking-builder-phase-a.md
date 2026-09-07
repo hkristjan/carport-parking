@@ -16,7 +16,10 @@
 - **Must open by double-clicking the file.** `fetch()` and ES modules are both CORS-blocked over `file://` — the default layout is an inline literal, and namespaces are classic `<script>` blocks, never `import`.
 - **World units are metres.** Origin at the top-left of the plan.
 - **Zero behaviour change in Phase A.** Same collisions, same spawn, same pixels.
-- **Every coordinate must be asserted finite on load.** A single `NaN` makes SAT silently report *no collision*, so bad data disables physics rather than crashing.
+- **Every coordinate must be asserted finite on load.** A single `NaN` makes SAT return a
+  bogus collision whose penetration depth is `NaN`, which then pushes the vehicle to `NaN`
+  coordinates — it does not throw and it does not cleanly miss. Verified: `collide` returns
+  `{d: NaN, nx: 1, ny: 0}` for an all-`NaN` quad.
 - **Namespaces tagged `<script data-ns="…">` must be DOM-free and app-state-free** — the test harness runs them in a bare `vm` context with no `window` or `document`.
 - **Never `git push`** without being asked (project CLAUDE.md).
 
@@ -96,7 +99,7 @@ import assert from 'node:assert/strict';
 import { loadApp } from './extract.mjs';
 
 const { geom } = loadApp();
-const round = n => Math.round(n * 1e6) / 1e6;
+const round = n => { const r = Math.round(n * 1e6) / 1e6; return r === 0 ? 0 : r; }; // normalise -0
 
 // The eight wall-shaped entries of today's staticObstacles, verbatim.
 const BOXES = [
@@ -141,16 +144,20 @@ test('collide reports overlap for intersecting boxes and null otherwise', () => 
   assert.equal(geom.collide(a, 0, geom.rectCorners({ x: 2, y: 0, w: 2, h: 2 }), 0), null);
 });
 
-test('a NaN coordinate makes collide silently miss — hence validation on load', () => {
+test('a NaN coordinate corrupts collide rather than missing — hence validation on load', () => {
+  // Every projection is NaN, so both `overlap <= 0` and `overlap < best.d` are false
+  // (all NaN comparisons are). collide never returns null; it returns a bogus MTV with
+  // d = NaN, and applying that puts the vehicle at NaN. Silent corruption, not a clean miss.
   const a = geom.rectCorners({ x: 0, y: 0, w: 2, h: 2 });
   const bad = [[NaN, NaN], [NaN, NaN], [NaN, NaN], [NaN, NaN]];
-  assert.equal(geom.collide(a, 0, bad, 0), null);
+  const hit = geom.collide(a, 0, bad, 0);
+  assert.ok(hit && Number.isNaN(hit.d));
 });
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: FAIL — `no <script data-ns="..."> blocks found in index.html`
 
 - [ ] **Step 4: Add the geom namespace block**
@@ -221,7 +228,7 @@ Every existing call site (lines 317, 423, and inside `step`/`pointerdown`) then 
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS, 5 tests
 
 - [ ] **Step 7: Verify the app still runs**
@@ -428,7 +435,7 @@ App.layout = (() => {
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS, all tests
 
 - [ ] **Step 5: Commit**
@@ -468,7 +475,7 @@ import assert from 'node:assert/strict';
 import { loadApp } from './extract.mjs';
 
 const { geom, layout, registry, defaults } = loadApp();
-const round = n => Math.round(n * 1e6) / 1e6;
+const round = n => { const r = Math.round(n * 1e6) / 1e6; return r === 0 ? 0 : r; }; // normalise -0
 const box = r => [round(r.x), round(r.y), round(r.w), round(r.h)];
 
 // Today's nine staticObstacles, verbatim and in source order.
@@ -653,7 +660,7 @@ The `carport` item's `at` is the centre of the old `{x:2.55, y:3.57, w:7.95, h:6
 
 - [ ] **Step 5: Run to verify it passes**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS, all tests
 
 - [ ] **Step 6: Commit**
@@ -867,7 +874,7 @@ App.compile = (() => {
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS, all tests
 
 - [ ] **Step 5: Commit**
@@ -958,7 +965,7 @@ Then open `index.html` and check all of:
 - driving onto the wooden deck is still blocked
 - the car cannot leave the plot on any of the four sides
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS (unchanged)
 
 - [ ] **Step 6: Commit**
@@ -1071,7 +1078,7 @@ Expected: no output
 
 Open `index.html` and compare against `git stash`-ed original side by side. Confirm: ground and street shading identical, street centre-line dashes present, path and apron shading present, all three bay outlines dashed in the same places, all eight walls/kerb/fence in their original greys, all five dimension lines with their labels, vehicles still drawn *under* the carport slats.
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -1177,7 +1184,7 @@ test('the main script no longer declares world literals', () => {
 
 - [ ] **Step 6: Verify and run**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS
 
 Open `index.html`. The scene must be pixel-identical to `git show HEAD~1:index.html`: deck planking, carport slats and shadow band, both palms, the ten south fence posts, the light stripe on the boundary wall. Drive a lap and confirm collisions unchanged.
@@ -1270,7 +1277,7 @@ test('a larger plot compiles to a larger extent and matching bounds', () => {
 
 - [ ] **Step 4: Run and verify**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.mjs`
 Expected: PASS
 
 Run: `python3 -c "import re;s=open('index.html').read();open('/tmp/s.js','w').write(re.search(r'<script>(.*?)</script>',s,re.S).group(1))" && node --check /tmp/s.js`
@@ -1302,7 +1309,7 @@ vehicles paint at `registry.VEHICLE_Z` (50).
 Run the tests with:
 
 ```bash
-node --test test/
+node --test test/*.test.mjs
 ```
 
 They cover `geom`, `layout` and `compile` only. Rendering and interaction stay
@@ -1327,7 +1334,7 @@ git commit -m "Drive the camera from the compiled plot extent and document names
 
 All must hold before Phase B (the editor) starts:
 
-1. `node --test test/` passes.
+1. `node --test test/*.test.mjs` passes.
 2. `grep -c staticObstacles index.html` returns 0.
 3. The scene is pixel-identical to `5109062:index.html` at desktop, 375×812 and 844×390.
 4. Collisions are unchanged: boundary wall, kerb, posts, fences, deck and all four plot edges all block.

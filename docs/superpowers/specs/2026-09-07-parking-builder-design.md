@@ -338,10 +338,11 @@ Hence per-kind conversion rather than a loop.
 `unpack` treats input as hostile, because documents will arrive from a server:
 
 - Every field type-checked; numbers clamped to sane ranges.
-- **Every coordinate explicitly asserted finite.** A single `NaN` makes SAT silently
-  report *no collision*, so bad data disables physics rather than crashing. This
-  project has already been bitten once by a silent `NaN` — see the `lock` warning in
-  CLAUDE.md.
+- **Every coordinate explicitly asserted finite.** A single `NaN` does not make SAT
+  miss cleanly and does not throw: it returns a bogus collision with `d = NaN`, which
+  pushes the vehicle to `NaN` coordinates and it vanishes. Verified against the real
+  `collide`, which returns `{d: NaN, nx: 1, ny: 0}` for an all-`NaN` quad. This project
+  has already been bitten once by a silent `NaN` — see the `lock` warning in CLAUDE.md.
 - Unknown `type` values **warn and skip, not fail the load**, so a newer layout still
   mostly renders in an older client.
 - Unknown top-level keys are preserved through pack/unpack so a round-trip in an older
@@ -378,7 +379,7 @@ script, `node --check`, then open the page and drive it.
 |---|---|
 | `fetch()` of a layout JSON fails over `file://` | Default layout is an inline literal |
 | ES modules are CORS-blocked over `file://` | One file for the MVP; namespaces, not modules |
-| A `NaN` coordinate silently disables collision | Assert finite on every coordinate in `unpack` |
+| A `NaN` coordinate yields a `NaN` push vector that teleports the vehicle | Assert finite on every coordinate in `unpack` |
 | `r` reset fires while typing in a number field | Mode-aware input routing with an `INPUT` guard |
 | Undo stack fills with drag intermediates | One snapshot per drag, on release |
 | Stale QA result attributed to an edited layout | `layoutHash` on `QAResult` |
