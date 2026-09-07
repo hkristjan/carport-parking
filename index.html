@@ -986,8 +986,11 @@ function editorKey(e) {
   const meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === 'z') {
     e.preventDefault();
+    // Cancel FIRST: undo/redo pushes the current document onto the opposite stack, and an
+    // abandoned drag's preview must not be what gets stored there.
+    cancelGesture();
     const next = e.shiftKey ? undoStack.redo(doc) : undoStack.undo(doc);
-    if (next) { cancelGesture(); replaceDoc(next); }
+    if (next) replaceDoc(next);
   }
 }
 
@@ -1072,7 +1075,15 @@ let drag = null, dragSnap = null;
 // Any transition that changes the document out from under a gesture must abandon that
 // gesture wholesale. `drag.orig` and `draft` both name a document generation that no longer
 // exists after an undo, a delete or a mode switch; replaying either one re-installs it.
-function cancelGesture() { draft = null; hoverSnap = null; pressAt = null; drag = null; dragSnap = null; }
+// A live drag is the one gesture that has ALREADY written to the document: every
+// pointermove installs its preview, and no undo entry exists until the release. Dropping
+// `drag` alone would leave that preview baked in and unundoable, which is the opposite of
+// a cancel — so put the document back before letting go of the snapshot that can.
+function cancelGesture() {
+  const orig = drag && drag.orig;
+  draft = null; hoverSnap = null; pressAt = null; drag = null; dragSnap = null;
+  if (orig) replaceDoc(orig);
+}
 
 function setTool(t) {
   tool = t; cancelGesture();
@@ -1284,6 +1295,10 @@ const endDrag = e => {
     const s = App.edit.snap(doc, pt, { radius: 10 / view.scale, grid: 0, enabled: !e.altKey, exclude: drag.id });
     if (s.kind === 'node' && s.nodeId !== drag.id) next = App.edit.mergeNodes(doc, s.nodeId, drag.id);
   }
+  // A release does not go through `commit` — it pushes its own snapshot below — so the
+  // clamp has to be applied here too, or the wall-body drag is the one way to move a node
+  // that never meets the guardrail.
+  next = App.edit.clampNodes(next);
   const moved = JSON.stringify(next) !== JSON.stringify(drag.orig);
   const orig = drag.orig;
   drag = null; dragSnap = null;
@@ -1310,7 +1325,7 @@ cv.addEventListener('pointermove', e => {
     if (drag.kind === 'node') next = App.edit.moveNode(drag.orig, drag.id, s.pt);
     else {
       // A wall dragged past the plot edge has its outside endpoint pulled to the boundary
-      // by the clamp in commit, which shortens the wall rather than translating it. That is
+      // by the clamp on release, which shortens the wall rather than translating it. That is
       // deliberate: a visibly shortened wall beats a wall that has left the plot.
       const w = drag.orig.walls.find(x => x.id === drag.id);
       const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1];
@@ -1319,7 +1334,10 @@ cv.addEventListener('pointermove', e => {
       next = App.edit.moveNode(next, w.to, [q[0] + dx, q[1] + dy]);
     }
     replaceDoc(next);          // live preview: recompile, but no undo snapshot yet
-    dragSnap = drag.kind === 'node' ? s : null;      // drawn by the overlay: what a drop would join
+    // Drawn by the overlay: what a drop would join. Only a NODE hit, because only a node
+    // hit does anything on release — showing the wall tier's "splits a wall" ring here
+    // would promise a split that endDrag never performs.
+    dragSnap = drag.kind === 'node' && s.kind === 'node' ? s : null;
     return;
   }
   hoverSnap = tool === 'wall' ? snapAt(pt, e) : null;
