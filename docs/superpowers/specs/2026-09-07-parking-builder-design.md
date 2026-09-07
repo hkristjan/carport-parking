@@ -47,7 +47,8 @@ Seven namespaces inside the one file, each the shape of a future module:
 |---|---|---|
 | `geom` | SAT, quad-from-nodes. No app state | — |
 | `layout` | Schema, validate, migrate, pack/unpack | — |
-| `registry` | Type table: kind, z, solid, footprint, draw | — |
+| `registry` | Type table: kind, solid, footprint, draw layers | — |
+| `defaults` | The shipped carport as an inline layout document | — |
 | `compile` | Document → solids, drawList, bounds, bays | `geom`, `registry` |
 | `sim` | Physics. Essentially unchanged | `geom` |
 | `render` | Canvas painting, camera | `registry` |
