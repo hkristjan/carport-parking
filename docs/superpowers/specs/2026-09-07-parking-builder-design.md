@@ -111,15 +111,21 @@ Version migration is a chain keyed by `v`, applied in order until current.
 One entry per type, owning everything that varies between types:
 
 ```js
-wall:    { kind: 'wall', z: 40, solid: true,  stroke: '#a3a8ae' }
-gravel:  { kind: 'area', z: 12, solid: false, draw(g, area, view) { … } }
-bollard: { kind: 'item', z: 55, solid: true,  footprint: { r: 0.12 } }
-deck:    { kind: 'item', z: 20, solid: true,  footprint: { w: 10.47, h: 1.76 } }
-palm:    { kind: 'item', z: 60, solid: false, draw(g, item, view) { … } }
+wall:    { kind: 'wall', solid: true,  layers: [ { z: 40, stroke: '#a3a8ae' } ] }
+gravel:  { kind: 'area', solid: false, layers: [ { z: 12, draw(g, a, view) { … } } ] }
+bollard: { kind: 'item', solid: true,  footprint: { r: 0.12 }, layers: [ … ] }
+deck:    { kind: 'item', solid: true,  footprint: { w: 10.47, h: 1.76 },
+           layers: [ { z: 20, draw: deckPlanks } ] }
+carport: { kind: 'item', solid: false,
+           layers: [ { z: 30, draw: carportFloor },     // under the cars
+                     { z: 60, draw: carportSlats } ] }  // over them
 ```
 
 - `kind` — which document array the type may appear in. Enforced by validation.
-- `z` — draw order. Replaces today's hardcoded paint sequence.
+- `layers` — one or more draw passes, each with its own `z`. A single `z` per type is
+  not enough: today's carport paints its floor *under* the vehicles and its slatted
+  roof and shadow band *over* them. Compile emits one drawList entry per
+  (instance, layer).
 - `solid` + `footprint` — whether compile emits a collision quad. A footprint is
   either `{ w, h }` for a rect or `{ r }` for a circle, the latter approximated as a
   quad.
@@ -179,8 +185,13 @@ handful.
 ```
 
 `compiled.solids` replaces both places that read the world today, which deletes the
-`staticObstacles[1]`-by-index deck lookup outright. `drawList` sorted by registry `z`
+`staticObstacles[1]`-by-index deck lookup outright. `drawList` sorted by layer `z`
 replaces the hardcoded paint order.
+
+**Vehicles paint in the middle of that order**, not on top: today they are drawn after
+the ground, walls and bay outlines but *before* the carport slats, palms and dimension
+lines. So the renderer walks drawList up to `VEHICLE_Z` (50), draws the vehicles, then
+walks the rest. Treating vehicles as a final overlay would visibly change the scene.
 
 Compile enforces invariants: referenced nodes exist, no zero-length walls, `t > 0`,
 polygons have ≥ 3 points, degree-0 nodes are garbage-collected.
