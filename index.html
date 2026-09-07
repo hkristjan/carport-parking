@@ -54,6 +54,11 @@
   .group button:focus-visible, .group select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
   .group .note { font-size: 12px; color: var(--ink-soft); margin-top: 10px; line-height: 1.45; }
   .group .sublabel { font-size: 12px; color: var(--ink-soft); margin: 12px 0 7px; }
+  .group .plab { font-size: 12px; color: var(--ink-soft); flex: 1; align-self: center; }
+  .group .punit { font-size: 12px; color: var(--ink-soft); align-self: center; }
+  .group input[type=number] { width: 78px; font: inherit; font-size: 14px; color: var(--ink);
+    background: #fff; border: 1px solid var(--hairline); border-radius: 3px; padding: 6px 8px; }
+  .group .row + .row { margin-top: 8px; }
   .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
   .swatches button { width: 24px; height: 24px; padding: 0; border-radius: 3px; border: 1px solid var(--hairline); cursor: pointer; }
   .swatches button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
@@ -189,6 +194,17 @@
       <button id="toolSelect" class="seg-btn" aria-pressed="true">Select</button>
       <button id="toolWall" class="seg-btn" aria-pressed="false">Wall</button>
     </div>
+  </div>
+  <div class="group" id="propsGroup" hidden>
+    <label>Selected wall</label>
+    <div class="row"><span class="plab">Thickness</span><input id="pT" type="number" step="0.01" min="0.02" max="1"><span class="punit">m</span></div>
+    <div class="row"><span class="plab">Length</span><input id="pLen" type="number" step="0.05" min="0.1"><span class="punit">m</span></div>
+    <div class="row"><span class="plab">Angle</span><input id="pAng" type="number" step="1"><span class="punit">°</span></div>
+    <div class="row"><span class="plab">Anchor</span>
+      <div class="seg"><button id="pAnchorFrom" class="seg-btn" aria-pressed="true">⟵</button><button id="pAnchorTo" class="seg-btn" aria-pressed="false">⟶</button></div>
+    </div>
+    <div class="row"><span class="plab">Type</span><select id="pType"></select></div>
+    <div class="note" id="pNote"></div>
   </div>
   <div class="group" id="controlsGroup">
     <label>Controls</label>
@@ -822,6 +838,8 @@ const panel = $('panel'), sheetToggle = $('sheetToggle'), hudEl = document.query
 const wheelEl = $('wheel'), modeArrows = $('modeArrows'), modeWheel = $('modeWheel');
 const modeDrive = $('modeDrive'), modeBuild = $('modeBuild');
 const toolRow = $('toolRow'), toolSelect = $('toolSelect'), toolWall = $('toolWall');
+const propsGroup = $('propsGroup'), pT = $('pT'), pLen = $('pLen'), pAng = $('pAng'), pType = $('pType');
+const pNote = $('pNote'), pAnchorFrom = $('pAnchorFrom'), pAnchorTo = $('pAnchorTo');
 const ctrlEls = [...document.querySelectorAll('.pad, .pedals, .wheel')];   // every on-screen control cluster
 
 // ---------- Models (metres; length, width without mirrors, wheelbase, kerb-to-kerb turning circle)
@@ -841,6 +859,8 @@ for (const m of models) {
   m.lock = Math.atan(m.wb / (Math.sqrt(Rout * Rout - m.wb * m.wb) - track / 2));
 }
 for (const sel of [addModel, swapModel]) for (const m of models) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); }
+for (const t of Object.keys(App.registry.types).filter(t => App.registry.types[t].kind === 'wall'))
+  { const o = document.createElement('option'); o.value = t; o.textContent = t; pType.appendChild(o); }
 
 // ---------- Paint. `null` means "whatever this model ships in".
 const paints = [
@@ -944,15 +964,38 @@ function editorKey(e) {
   }
 }
 
+// ---------- Wall properties panel: thickness, length, angle, type, plus an anchor toggle
+// picking which end of the wall stays put while the other slides to match a length/angle edit.
+let anchor = 'from';
+function syncProps() {
+  const ids = selection.walls;
+  propsGroup.hidden = !isBuild() || ids.length === 0;
+  if (propsGroup.hidden) return;
+  const ws = ids.map(id => doc.walls.find(w => w.id === id)).filter(Boolean);
+  const multi = ws.length > 1;
+  const w = ws[0];
+  const p = doc.nodes[w.from], q = doc.nodes[w.to];
+  const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  pT.value = multi && ws.some(x => x.t !== w.t) ? '' : w.t.toFixed(2);
+  pLen.value = multi ? '' : len.toFixed(2);
+  pAng.value = multi ? '' : (Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI).toFixed(1);
+  pType.value = multi && ws.some(x => x.type !== w.type) ? '' : w.type;
+  // multi-select applies thickness and type to all; length and angle are meaningless
+  pLen.disabled = pAng.disabled = multi;
+  pAnchorFrom.disabled = pAnchorTo.disabled = multi;
+  pNote.textContent = multi ? `${ws.length} walls selected — thickness and type apply to all` : '';
+}
+
 // Every document mutation goes through here: snapshot for undo, swap, recompile.
 // The recompile is not optional — world.runs and world.drawList hold live references
 // into the document, so skipping it leaves collision stale while rendering looks right.
-function commit(next) { history.push(doc); replaceDoc(next); }
+function commit(next) { history.push(doc); replaceDoc(next); syncProps(); }
 function replaceDoc(next) {
   for (const k of Object.keys(doc)) delete doc[k];
   Object.assign(doc, next);
   world = App.compile(doc);
   if (world.warnings.length) console.warn('layout warnings:', world.warnings);
+  syncProps();
 }
 
 function setEditMode(on) {
@@ -967,6 +1010,7 @@ function setEditMode(on) {
   // round-trip silently resumes on the next click, and one that survives an undo names
   // nodes the document no longer has.
   draft = null; hoverSnap = null; pressAt = null;
+  syncProps();
 }
 modeDrive.addEventListener('click', () => setEditMode(false));
 modeBuild.addEventListener('click', () => setEditMode(true));
@@ -986,6 +1030,49 @@ function setTool(t) {
 }
 toolSelect.addEventListener('click', () => setTool('select'));
 toolWall.addEventListener('click', () => setTool('wall'));
+
+// ---------- Wall properties inputs
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+pT.addEventListener('change', () => {
+  const v = clamp(parseFloat(pT.value), 0.02, 1);          // spec's guardrail
+  if (!Number.isFinite(v)) return syncProps();
+  let next = doc;
+  for (const id of selection.walls) {
+    next = JSON.parse(JSON.stringify(next));
+    const w = next.walls.find(x => x.id === id); if (w) w.t = v;
+  }
+  commit(next);
+});
+
+pLen.addEventListener('change', () => {
+  const v = parseFloat(pLen.value);
+  if (!Number.isFinite(v) || v < 0.1) return syncProps();   // degenerate walls are refused
+  commit(App.edit.setLength(doc, selection.walls[0], v, anchor));
+});
+
+pAng.addEventListener('change', () => {
+  const v = parseFloat(pAng.value);
+  if (!Number.isFinite(v)) return syncProps();
+  const w = doc.walls.find(x => x.id === selection.walls[0]); if (!w) return;
+  const keepId = anchor === 'to' ? w.to : w.from, moveId = anchor === 'to' ? w.from : w.to;
+  const p = doc.nodes[keepId], q = doc.nodes[moveId];
+  const len = Math.hypot(q[0] - p[0], q[1] - p[1]), a = v * Math.PI / 180;
+  commit(App.edit.moveNode(doc, moveId, [p[0] + Math.cos(a) * len, p[1] + Math.sin(a) * len]));
+});
+
+pType.addEventListener('change', () => {
+  let next = doc;
+  for (const id of selection.walls) {
+    next = JSON.parse(JSON.stringify(next));
+    const w = next.walls.find(x => x.id === id); if (w) w.type = pType.value;
+  }
+  commit(next);
+});
+
+const setAnchor = a => { anchor = a; pAnchorFrom.setAttribute('aria-pressed', String(a === 'from')); pAnchorTo.setAttribute('aria-pressed', String(a === 'to')); };
+pAnchorFrom.addEventListener('click', () => setAnchor('from'));
+pAnchorTo.addEventListener('click', () => setAnchor('to'));
 
 // ---------- Simulation (only the selected vehicle moves)
 function step(dt) {
@@ -1213,6 +1300,7 @@ function editorPointerDown(e, pt) {
   if (hit.nodeId) drag = { kind: 'node', id: hit.nodeId, start: pt, orig: JSON.parse(JSON.stringify(doc)) };
   else if (hit.wallId) drag = { kind: 'wall', id: hit.wallId, start: pt, orig: JSON.parse(JSON.stringify(doc)) };
   if (drag) cv.setPointerCapture(e.pointerId);
+  syncProps();
 }
 
 // ---------- The side panel becomes a bottom sheet on small screens
